@@ -1,0 +1,167 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* ========================================
+   Safari Fix: Disable transitions and animations
+   to stop Safari "dancing" issue
+   ======================================== */
+
+/* Disable transitions and animations globally */
+*,
+*::before,
+*::after {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: none !important;
+  -webkit-transition: none !important;
+  animation: none !important;
+  -webkit-animation: none !important;
+}
+
+/* Disable transforms on buttons specifically (Safari dancing fix) */
+button:not([data-radix-collection-item]),
+[role="button"]:not([data-radix-collection-item]),
+a {
+  transform: none !important;
+  -webkit-transform: none !important;
+}
+
+/* Allow Radix UI popper/dropdown positioning to work properly */
+[data-radix-popper-content-wrapper],
+[data-radix-select-content],
+[data-radix-select-viewport],
+[data-slot="select-content"] {
+  transform: unset !important;
+  -webkit-transform: unset !important;
+}
+
+/* ========================================
+   HuaweiWorldAnalytics Professional Design Patterns
+   ======================================== */
+
+/* CSS Variables for consistent theming */
+:root {
+  --card-border: rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 12px 32px rgba(0, 0, 0, 0.15), 0 6px 12px rgba(0, 0, 0, 0.1);
+  --card-shadow-3d: 0 6px 20px rgba(0, 0, 0, 0.12), 0 3px 6px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --backdrop-blur: blur(12px);
+}
+
+/* ----------------------------------------
+   3D Card Styling - Professional Look
+   ---------------------------------------- */
+.card-3d {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow-3d);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-3d:hover {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* Professional Card Styling */
+.card-professional {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-professional:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+/* ----------------------------------------
+   Hover Elevate Effect (3D)
+   ---------------------------------------- */
+.hover-elevate {
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.hover-elevate:hover {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), 0 6px 12px rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* ----------------------------------------
+   Enhanced Card Visibility
+   ---------------------------------------- */
+.card-visible {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+}
+
+/* ----------------------------------------
+   Sheet/Panel with better spacing
+   ---------------------------------------- */
+[data-radix-dialog-content] {
+  padding: 1.5rem !important;
+}
+
+/* Better form spacing */
+.form-spacing > * + * {
+  margin-top: 1.25rem;
+}
+
+/* Fix cramped inputs */
+.input-spacing {
+  margin-top: 0.5rem;
+}
+
+/* ----------------------------------------
+   Clean Typography Classes
+   ---------------------------------------- */
+.text-kpi-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgb(107 114 128); /* text-gray-500 */
+}
+
+.text-kpi-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  letter-spacing: -0.025em;
+}
+
+/* ----------------------------------------
+   Smooth Animations
+   ---------------------------------------- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* ----------------------------------------
+   Icon Container (Fix Overlap Issues)
+   ---------------------------------------- */
+.icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
