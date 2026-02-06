@@ -28,7 +28,7 @@ export function Contact() {
     {
       icon: MailIcon,
       title: 'Email',
-      content: 'hello@reccur.ng',
+      content: 'hello@suscribly.ng',
       description: 'Send us an email anytime',
       color: 'bg-blue-100 text-blue-600',
     },

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 
 export function TermsOfService() {
   return (
@@ -11,7 +11,7 @@ export function TermsOfService() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <Link to="/">
               <Button variant="ghost">Back to Home</Button>
@@ -31,14 +31,14 @@ export function TermsOfService() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">1. Acceptance of Terms</h2>
               <p className="text-gray-700 leading-relaxed">
-                By accessing or using Reccur's subscription management and recurring payment platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the Service.
+                By accessing or using Suscribly's subscription management and recurring payment platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the Service.
               </p>
             </section>
 
             <section className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">2. Description of Service</h2>
               <p className="text-gray-700 leading-relaxed mb-4">
-                Reccur provides a B2B2C platform that enables businesses to:
+                Suscribly provides a B2B2C platform that enables businesses to:
               </p>
               <ul className="list-disc list-inside text-gray-700 space-y-2">
                 <li>Manage subscription plans and recurring billing</li>
@@ -99,7 +99,7 @@ export function TermsOfService() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">6. Intellectual Property</h2>
               <p className="text-gray-700 leading-relaxed">
-                The Service and its original content, features, and functionality are owned by Reccur and are protected by international copyright, trademark, and other intellectual property laws.
+                The Service and its original content, features, and functionality are owned by Suscribly and are protected by international copyright, trademark, and other intellectual property laws.
               </p>
             </section>
 
@@ -113,7 +113,7 @@ export function TermsOfService() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">8. Limitation of Liability</h2>
               <p className="text-gray-700 leading-relaxed">
-                To the maximum extent permitted by law, Reccur shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the Service.
+                To the maximum extent permitted by law, Suscribly shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the Service.
               </p>
             </section>
 
@@ -137,7 +137,7 @@ export function TermsOfService() {
                 For questions about these Terms, please contact us:
               </p>
               <ul className="text-gray-700 space-y-2">
-                <li><strong>Email:</strong> legal@reccur.ng</li>
+                <li><strong>Email:</strong> legal@suscribly.com</li>
                 <li><strong>Phone:</strong> +234 (0) 123 456 7890</li>
                 <li><strong>Address:</strong> 123 Awolowo Road, Ikoyi, Lagos, Nigeria</li>
               </ul>

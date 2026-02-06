@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 
 interface PortalHeaderProps {
   title: string;
@@ -15,7 +15,7 @@ export function PortalHeader({ title, subtitle, actions, userMenu }: PortalHeade
         {/* Left section - Logo and Title */}
         <div className="flex items-center gap-6">
           <Link to="/" className="hover:opacity-80 flex-shrink-0">
-            <ReccurLogo size="sm" showText={true} />
+            <SuscriblyLogo size="sm" showText={true} />
           </Link>
 
           {/* Divider */}

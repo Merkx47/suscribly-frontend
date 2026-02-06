@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import { TargetIcon, UsersIcon, TrendingUpIcon, ShieldIcon } from '@/app/components/icons/FinanceIcons';
 
 export function AboutUs() {
@@ -66,7 +66,7 @@ export function AboutUs() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <div className="flex items-center gap-4">
               <Link to="/">
@@ -85,7 +85,7 @@ export function AboutUs() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Hero Section */}
         <div className="text-center mb-20">
-          <h1 className="text-5xl font-bold text-gray-900 mb-6">About Reccur</h1>
+          <h1 className="text-5xl font-bold text-gray-900 mb-6">About Suscribly</h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
             We're on a mission to revolutionize recurring payments in Nigeria by making subscription management and direct debit payments simple, secure, and accessible for every business.
           </p>

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import { BriefcaseIcon, UsersIcon, TrendingUpIcon, HeartIcon, MapPinIcon, NairaIcon } from '@/app/components/icons/FinanceIcons';
 
 export function Careers() {
@@ -25,7 +25,7 @@ export function Careers() {
       department: 'Customer Success',
       location: 'Lagos, Nigeria',
       type: 'Full-time',
-      description: 'Help our customers succeed with Reccur and grow their businesses.',
+      description: 'Help our customers succeed with Suscribly and grow their businesses.',
     },
     {
       title: 'DevOps Engineer',
@@ -77,7 +77,7 @@ export function Careers() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <div className="flex items-center gap-4">
               <Link to="/">
@@ -104,7 +104,7 @@ export function Careers() {
 
         {/* Benefits Section */}
         <div className="mb-20">
-          <h2 className="text-4xl font-bold text-gray-900 text-center mb-12">Why Work at Reccur?</h2>
+          <h2 className="text-4xl font-bold text-gray-900 text-center mb-12">Why Work at Suscribly?</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {benefits.map((benefit, index) => (
               <Card key={index} className="border-0 shadow-md hover:shadow-lg transition-shadow text-center">
@@ -167,7 +167,7 @@ export function Careers() {
           <div className="bg-gradient-to-r from-blue-600 to-green-600 rounded-2xl p-12 text-white text-center">
             <h2 className="text-4xl font-bold mb-4">Our Culture</h2>
             <p className="text-xl text-blue-100 max-w-3xl mx-auto mb-8">
-              At Reccur, we believe in building a diverse, inclusive environment where everyone can do their best work.
+              At Suscribly, we believe in building a diverse, inclusive environment where everyone can do their best work.
               We value innovation, collaboration, and continuous learning.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">

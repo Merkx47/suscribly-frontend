@@ -7,6 +7,11 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, type }: StatusBadgeProps) {
+  // Normalize status to Title Case for matching (handles "ACTIVE" -> "Active", etc.)
+  const normalized = (status || 'Unknown')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
   const getStatusColor = () => {
     if (type === 'mandate') {
       const mandateColors: Record<string, string> = {
@@ -20,7 +25,7 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
         'Suspended': 'bg-gray-100 text-gray-800 border-gray-200',
         'Cancelled': 'bg-gray-100 text-gray-800 border-gray-200',
       };
-      return mandateColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+      return mandateColors[normalized] || 'bg-gray-100 text-gray-800 border-gray-200';
     }
 
     if (type === 'subscription') {
@@ -30,7 +35,7 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
         'Cancelled': 'bg-gray-100 text-gray-800 border-gray-200',
         'Expired': 'bg-red-100 text-red-800 border-red-200',
       };
-      return subscriptionColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+      return subscriptionColors[normalized] || 'bg-gray-100 text-gray-800 border-gray-200';
     }
 
     if (type === 'payment') {
@@ -40,7 +45,7 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
         'Success': 'bg-green-100 text-green-800 border-green-200',
         'Failed': 'bg-red-100 text-red-800 border-red-200',
       };
-      return paymentColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+      return paymentColors[normalized] || 'bg-gray-100 text-gray-800 border-gray-200';
     }
 
     // General status colors
@@ -53,12 +58,12 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
       'Processing': 'bg-blue-100 text-blue-800 border-blue-200',
       'Expired': 'bg-gray-100 text-gray-800 border-gray-200',
     };
-    return generalColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+    return generalColors[normalized] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   return (
     <Badge variant="outline" className={`${getStatusColor()} font-medium shadow-sm`}>
-      {status}
+      {normalized}
     </Badge>
   );
 }

@@ -26,14 +26,14 @@ interface SubscribeModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   plan: {
-    id: string;
-    name: string;
-    description: string;
-    amount: number;
-    billingCycle: string;
+    planId: string;
+    planName: string;
+    planDescription: string;
+    planAmount: string;
+    planBillingInterval: string;
     features: string[];
-    tenantId: string;
-    tenantName: string;
+    businessId: string;
+    businessName: string;
   };
 }
 
@@ -89,7 +89,7 @@ export function SubscribeModal({ open, onOpenChange, plan }: SubscribeModalProps
     
     // Simulate verification check
     setTimeout(() => {
-      toast.success(`Successfully subscribed to ${plan.name}! Your first payment will be processed on the next billing cycle.`);
+      toast.success(`Successfully subscribed to ${plan.planName}! Your first payment will be processed on the next billing cycle.`);
       setVerificationPending(false);
       onOpenChange(false);
       resetModal();
@@ -108,9 +108,9 @@ export function SubscribeModal({ open, onOpenChange, plan }: SubscribeModalProps
   };
 
   const verificationAccountDetails = {
-    bankName: 'Reccur Verification Account',
+    bankName: 'Suscribly Verification Account',
     accountNumber: '0123456789',
-    accountName: 'Reccur Verification',
+    accountName: 'Suscribly Verification',
   };
 
   return (
@@ -121,7 +121,7 @@ export function SubscribeModal({ open, onOpenChange, plan }: SubscribeModalProps
       }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Subscribe to {plan.name}</DialogTitle>
+            <DialogTitle>Subscribe to {plan.planName}</DialogTitle>
             <DialogDescription>
               {step === 'select-account' 
                 ? 'Select a bank account for recurring payments' 
@@ -136,18 +136,18 @@ export function SubscribeModal({ open, onOpenChange, plan }: SubscribeModalProps
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="font-semibold text-gray-900">{plan.name}</h3>
-                      <p className="text-sm text-gray-600">{plan.tenantName}</p>
+                      <h3 className="font-semibold text-gray-900">{plan.planName}</h3>
+                      <p className="text-sm text-gray-600">{plan.businessName}</p>
                     </div>
                     <Badge variant="secondary" className="bg-purple-100 text-purple-700">
-                      {plan.billingCycle}
+                      {plan.planBillingInterval}
                     </Badge>
                   </div>
                   <div className="text-2xl font-bold text-gray-900 mb-4">
-                    ₦{plan.amount.toLocaleString()}
-                    <span className="text-sm font-normal text-gray-600">/{plan.billingCycle.toLowerCase()}</span>
+                    ₦{Number(plan.planAmount).toLocaleString()}
+                    <span className="text-sm font-normal text-gray-600">/{plan.planBillingInterval.toLowerCase()}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mb-3">{plan.description}</p>
+                  <p className="text-sm text-gray-600 mb-3">{plan.planDescription}</p>
                   <div className="space-y-1">
                     {plan.features.map((feature, index) => (
                       <div key={index} className="flex items-center gap-2 text-sm text-gray-700">
@@ -234,8 +234,8 @@ export function SubscribeModal({ open, onOpenChange, plan }: SubscribeModalProps
                     <div className="text-sm text-blue-900">
                       <p className="font-medium mb-1">Direct Debit Authorization</p>
                       <p className="text-blue-800">
-                        By subscribing, you authorize {plan.tenantName} to debit ₦{plan.amount.toLocaleString()}{' '}
-                        from your selected account every {plan.billingCycle.toLowerCase()}. You can cancel anytime.
+                        By subscribing, you authorize {plan.businessName} to debit ₦{Number(plan.planAmount).toLocaleString()}{' '}
+                        from your selected account every {plan.planBillingInterval.toLowerCase()}. You can cancel anytime.
                       </p>
                     </div>
                   </div>

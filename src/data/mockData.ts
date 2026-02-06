@@ -1,5 +1,5 @@
 import type {
-  Tenant,
+  Business,
   Customer,
   Product,
   SubscriptionPlan,
@@ -45,7 +45,7 @@ export const platformPlans: PlatformPlan[] = [
   },
 ];
 
-export const tenants: Tenant[] = [
+export const businesses: Business[] = [
   {
     id: 'TNT001',
     businessName: 'BodyFit Wellness',
@@ -102,7 +102,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB001 (Standard Membership - Active)
     totalPaid: 24000, // Based on transactions TXN001 + TXN004 (pending)
     joinedDate: '2024-06-15',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST002',
@@ -113,7 +113,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB002 (Premium Membership - Active)
     totalPaid: 36000, // TXN002 + TXN021
     joinedDate: '2024-07-20',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST003',
@@ -124,7 +124,7 @@ export const customers: Customer[] = [
     subscriptions: 0, // SUB003 (DStv Compact - Cancelled)
     totalPaid: 0, // No successful transactions
     joinedDate: '2024-05-10',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'CUST004',
@@ -135,7 +135,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB004 (uLesson Premium - Active)
     totalPaid: 0, // TXN003 failed
     joinedDate: '2024-08-01',
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'CUST005',
@@ -146,7 +146,7 @@ export const customers: Customer[] = [
     subscriptions: 2, // SUB005 + SUB006 (Premium + Standard - both Active)
     totalPaid: 48000, // TXN005 + TXN006 + TXN017 (failed - not counted)
     joinedDate: '2024-09-05',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST006',
@@ -157,7 +157,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB007 (Standard Membership - Active)
     totalPaid: 24000, // TXN007 + TXN019
     joinedDate: '2024-10-12',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST007',
@@ -168,7 +168,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB008 (DStv Premium - Active)
     totalPaid: 49000, // TXN008 + TXN018
     joinedDate: '2024-08-20',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'CUST008',
@@ -179,7 +179,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB009 (uLesson Premium - Active)
     totalPaid: 42000, // TXN009 (processing) + TXN023
     joinedDate: '2024-11-01',
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'CUST009',
@@ -190,7 +190,7 @@ export const customers: Customer[] = [
     subscriptions: 0, // SUB010 (Cancelled)
     totalPaid: 0, // No successful transactions
     joinedDate: '2024-07-15',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST010',
@@ -201,7 +201,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB011 (uLesson Premium - Active)
     totalPaid: 0, // TXN010 pending
     joinedDate: '2024-12-01',
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'CUST011',
@@ -212,7 +212,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB012 (DStv Compact - Active)
     totalPaid: 21000, // TXN011 + TXN020
     joinedDate: '2024-09-18',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'CUST012',
@@ -223,7 +223,7 @@ export const customers: Customer[] = [
     subscriptions: 2, // SUB013 (Active) + SUB014 (Paused)
     totalPaid: 36000, // TXN012 + TXN022
     joinedDate: '2024-10-25',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST013',
@@ -234,7 +234,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB015 (DStv Compact Plus - Active)
     totalPaid: 14250, // TXN013 (failed) + TXN014 (success)
     joinedDate: '2024-11-15',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'CUST014',
@@ -245,7 +245,7 @@ export const customers: Customer[] = [
     subscriptions: 0, // SUB016 (Cancelled)
     totalPaid: 0, // No successful transactions
     joinedDate: '2024-06-01',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'CUST015',
@@ -256,7 +256,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB017 (uLesson Premium - Active)
     totalPaid: 42000, // TXN015 + TXN024
     joinedDate: '2024-08-10',
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'CUST016',
@@ -267,7 +267,7 @@ export const customers: Customer[] = [
     subscriptions: 1, // SUB018 (DStv Premium - Active)
     totalPaid: 0, // TXN016 processing
     joinedDate: '2024-07-28',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
 ];
 
@@ -279,7 +279,7 @@ export const products: Product[] = [
     amount: 18000,
     status: 'Active',
     createdDate: '2024-01-15',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'PROD002',
@@ -288,7 +288,7 @@ export const products: Product[] = [
     amount: 12000,
     status: 'Active',
     createdDate: '2024-01-15',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'PROD003',
@@ -297,7 +297,7 @@ export const products: Product[] = [
     amount: 24500,
     status: 'Active',
     createdDate: '2024-02-01',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PROD004',
@@ -306,7 +306,7 @@ export const products: Product[] = [
     amount: 8000,
     status: 'Active',
     createdDate: '2024-02-10',
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'PROD005',
@@ -315,7 +315,7 @@ export const products: Product[] = [
     amount: 8000,
     status: 'Active',
     createdDate: '2024-03-01',
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'PROD006',
@@ -324,7 +324,7 @@ export const products: Product[] = [
     amount: 14250,
     status: 'Active',
     createdDate: '2024-02-01',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PROD007',
@@ -333,7 +333,7 @@ export const products: Product[] = [
     amount: 10500,
     status: 'Active',
     createdDate: '2024-02-01',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PROD008',
@@ -342,7 +342,7 @@ export const products: Product[] = [
     amount: 6200,
     status: 'Active',
     createdDate: '2024-02-15',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PROD009',
@@ -351,7 +351,7 @@ export const products: Product[] = [
     amount: 3500,
     status: 'Active',
     createdDate: '2024-02-15',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PROD010',
@@ -360,7 +360,7 @@ export const products: Product[] = [
     amount: 1500,
     status: 'Active',
     createdDate: '2024-03-01',
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
 ];
 
@@ -374,7 +374,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 1245,
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'PLAN002',
@@ -385,7 +385,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 892,
-    tenantId: 'TNT001',
+    businessId: 'TNT001',
   },
   {
     id: 'PLAN003',
@@ -396,7 +396,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 428,
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PLAN004',
@@ -407,7 +407,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 567,
-    tenantId: 'TNT003',
+    businessId: 'TNT003',
   },
   {
     id: 'PLAN005',
@@ -418,7 +418,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 7,
     status: 'Active',
     subscribers: 156,
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PLAN006',
@@ -429,7 +429,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 203,
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
   {
     id: 'PLAN007',
@@ -440,7 +440,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     trialPeriod: 0,
     status: 'Active',
     subscribers: 342,
-    tenantId: 'TNT002',
+    businessId: 'TNT002',
   },
 ];
 
@@ -1234,15 +1234,15 @@ export const settlements: Settlement[] = [
 export const activityLogs: ActivityLog[] = [
   {
     id: 'LOG001',
-    user: 'admin@reccur.io',
-    action: 'Tenant Suspended',
+    user: 'admin@suscribly.com',
+    action: 'Business Suspended',
     details: 'Suspended Smile Telecoms (TNT004) - Payment overdue',
     timestamp: '2026-01-24 10:30:45',
     ipAddress: '197.210.84.123',
   },
   {
     id: 'LOG002',
-    user: 'support@reccur.io',
+    user: 'support@suscribly.com',
     action: 'Platform Settings Updated',
     details: 'Updated NIBSS API credentials',
     timestamp: '2026-01-24 09:15:22',
@@ -1250,18 +1250,18 @@ export const activityLogs: ActivityLog[] = [
   },
   {
     id: 'LOG003',
-    user: 'admin@reccur.io',
-    action: 'New Tenant Approved',
-    details: 'Approved tenant application for TechStart Ltd',
+    user: 'admin@suscribly.com',
+    action: 'New Business Approved',
+    details: 'Approved business application for TechStart Ltd',
     timestamp: '2026-01-23 14:20:10',
     ipAddress: '197.210.84.123',
   },
 ];
 
-// Platform metrics - calculated from all tenants
-// Total tenants: 4 (TNT001, TNT002, TNT003, TNT004)
-// Total active subscribers from tenants: 3452 + 428 + 1876 + 45 = 5801
-// Total monthly revenue from tenants: 15680000 + 2140000 + 5628000 + 0 = 23448000
+// Platform metrics - calculated from all businesses
+// Total businesses: 4 (TNT001, TNT002, TNT003, TNT004)
+// Total active subscribers from businesses: 3452 + 428 + 1876 + 45 = 5801
+// Total monthly revenue from businesses: 15680000 + 2140000 + 5628000 + 0 = 23448000
 // Successful transactions: TXN001,2,5,6,7,8,11,12,14,15,18,19,20,21,22,23,24 = 17
 // Failed transactions: TXN003, TXN013, TXN017 = 3
 // Pending/Processing: TXN004, TXN009, TXN010, TXN016 = 4
@@ -1276,12 +1276,12 @@ export const platformMetrics: DashboardMetrics = {
   growthRate: 12.5,
 };
 
-// Tenant metrics for TNT001 (BodyFit Wellness) - default context
+// Business metrics for TNT001 (BodyFit Wellness) - default context
 // Customers in TNT001: CUST001,2,5,6,9,12,14 = 7 customers
 // Active subscriptions for TNT001 customers: SUB001,2,5,6,7,13,14 = 7 (but 14 is Paused, 10,16 are Cancelled)
 // Plans for TNT001: PLAN001, PLAN002
 // Active subs using TNT001 plans: SUB001,5,6,7,10,13,14,16 (some cancelled/paused)
-export const tenantMetrics: DashboardMetrics = {
+export const businessMetrics: DashboardMetrics = {
   totalRevenue: 15680000,
   activeSubscribers: 3452,
   successfulCharges: 2891,

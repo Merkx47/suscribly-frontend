@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 
 export function PrivacyPolicy() {
   return (
@@ -11,7 +11,7 @@ export function PrivacyPolicy() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <Link to="/">
               <Button variant="ghost">Back to Home</Button>
@@ -31,10 +31,10 @@ export function PrivacyPolicy() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">1. Introduction</h2>
               <p className="text-gray-700 leading-relaxed mb-4">
-                Reccur ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our subscription management and recurring payment platform.
+                Suscribly ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our subscription management and recurring payment platform.
               </p>
               <p className="text-gray-700 leading-relaxed">
-                By using Reccur, you agree to the collection and use of information in accordance with this policy.
+                By using Suscribly, you agree to the collection and use of information in accordance with this policy.
               </p>
             </section>
 
@@ -137,7 +137,7 @@ export function PrivacyPolicy() {
                 If you have questions about this Privacy Policy, please contact us:
               </p>
               <ul className="text-gray-700 space-y-2">
-                <li><strong>Email:</strong> privacy@reccur.ng</li>
+                <li><strong>Email:</strong> privacy@suscribly.com</li>
                 <li><strong>Phone:</strong> +234 (0) 123 456 7890</li>
                 <li><strong>Address:</strong> 123 Awolowo Road, Ikoyi, Lagos, Nigeria</li>
               </ul>

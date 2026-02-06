@@ -1,45 +1,66 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { MailIcon, LockIcon, EyeIcon, EyeOffIcon, AlertCircleIcon, CheckCircleIcon, BuildingIcon } from '@/app/components/icons/FinanceIcons';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
+import { authApi, billingApi, getAccessToken } from '@/lib/api';
+import type { BankResponse } from '@/lib/api/billing';
 
 export function CustomerLogin() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    rememberMe: false,
   });
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
-    
+
     if (!formData.email) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
     }
-    
+
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
-      // Mock authentication - in real app, call API
-      navigate('/customer/dashboard');
+    if (!validateForm()) return;
+
+    setIsLoading(true);
+    setErrors({});
+    try {
+      const response = await authApi.login({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (response.mustChangePassword) {
+        navigate('/customer/setup-password');
+      } else {
+        navigate(`/customer/${response.userId}/dashboard`);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Invalid email or password';
+      setErrors({ general: msg });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -49,7 +70,7 @@ export function CustomerLogin() {
         {/* Logo/Brand */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <ReccurLogo size="lg" showText={true} />
+            <SuscriblyLogo size="lg" showText={true} />
           </div>
           <p className="text-gray-600">Customer Portal</p>
         </div>
@@ -125,6 +146,8 @@ export function CustomerLogin() {
                   <input
                     id="remember"
                     type="checkbox"
+                    checked={formData.rememberMe}
+                    onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
                     className="w-4 h-4 rounded border-2 border-gray-300 bg-white text-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer checked:bg-purple-600 checked:border-purple-600"
                   />
                   <label htmlFor="remember" className="text-sm text-gray-600 cursor-pointer select-none">
@@ -136,8 +159,15 @@ export function CustomerLogin() {
                 </Link>
               </div>
 
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
-                Sign In
+              {errors.general && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  <AlertCircleIcon className="w-4 h-4 flex-shrink-0" />
+                  <span>{errors.general}</span>
+                </div>
+              )}
+
+              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+                {isLoading ? 'Signing in...' : 'Sign In'}
               </Button>
             </form>
 
@@ -232,11 +262,27 @@ export function CustomerPasswordSetup() {
     setPasswordStrength(checkPasswordStrength(password));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
-      // Mock password setup - in real app, call API
-      navigate('/customer/dashboard');
+    if (!validateForm()) return;
+
+    setIsLoading(true);
+    setError('');
+    try {
+      // User must be logged in (they used their temp password to log in, got redirected here)
+      await authApi.changePassword(
+        '', // currentPassword is the temp password - already authenticated via JWT
+        formData.password
+      );
+      const storedUser = authApi.getStoredUser();
+      navigate(`/customer/${storedUser?.userId || 'me'}/dashboard`);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to set password. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -245,7 +291,7 @@ export function CustomerPasswordSetup() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <ReccurLogo size="lg" showText={true} />
+            <SuscriblyLogo size="lg" showText={true} />
           </div>
           <p className="text-gray-600">Customer Portal</p>
         </div>
@@ -367,8 +413,15 @@ export function CustomerPasswordSetup() {
                 </ul>
               </div>
 
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
-                Set Password & Continue
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  <AlertCircleIcon className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+                {isLoading ? 'Setting password...' : 'Set Password & Continue'}
               </Button>
             </form>
           </CardContent>
@@ -388,8 +441,14 @@ export function CustomerForgotPassword() {
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setError('Email is required');
@@ -399,19 +458,53 @@ export function CustomerForgotPassword() {
       setError('Email is invalid');
       return;
     }
-    
-    // Mock sending email - in real app, call API
-    setEmailSent(true);
+
+    setIsLoading(true);
     setError('');
+    try {
+      await authApi.forgotPassword(email);
+      setOtpStep(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to send reset code. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (emailSent) {
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode) {
+      setError('Please enter the OTP code');
+      return;
+    }
+    if (!newPassword || newPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    try {
+      await authApi.resetPassword(email, otpCode, newPassword);
+      setResetSuccess(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to reset password. Please check your OTP code.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (resetSuccess) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-100 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <ReccurLogo size="lg" showText={true} />
+              <SuscriblyLogo size="lg" showText={true} />
             </div>
           </div>
 
@@ -420,34 +513,98 @@ export function CustomerForgotPassword() {
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircleIcon className="w-8 h-8 text-green-600" />
               </div>
-              <CardTitle className="text-2xl">Check Your Email</CardTitle>
+              <CardTitle className="text-2xl">Password Reset!</CardTitle>
               <CardDescription>
-                We've sent password reset instructions to {email}
+                Your password has been reset successfully.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-blue-800">
-                    Click the link in the email to reset your password. The link will expire in 1 hour.
-                  </p>
+              <Button
+                onClick={() => navigate('/customer/login')}
+                className="w-full bg-purple-600 hover:bg-purple-700"
+              >
+                Go to Login
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (otpStep) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <SuscriblyLogo size="lg" showText={true} />
+            </div>
+          </div>
+
+          <Card className="border-gray-200 shadow-xl">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl text-center">Reset Password</CardTitle>
+              <CardDescription className="text-center">
+                Enter the OTP code sent to {email} and your new password
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="otp">OTP Code</Label>
+                  <Input
+                    id="otp"
+                    type="text"
+                    placeholder="Enter OTP code"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    className="text-center font-mono text-lg tracking-widest"
+                    maxLength={6}
+                  />
                 </div>
 
-                <Button 
-                  onClick={() => navigate('/customer/login')} 
-                  className="w-full bg-purple-600 hover:bg-purple-700"
-                >
-                  Back to Login
+                <div className="space-y-2">
+                  <Label htmlFor="new-pw">New Password</Label>
+                  <Input
+                    id="new-pw"
+                    type="password"
+                    placeholder="Enter new password (min. 8 characters)"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-pw">Confirm Password</Label>
+                  <Input
+                    id="confirm-pw"
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                    <AlertCircleIcon className="w-4 h-4 flex-shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+                  {isLoading ? 'Resetting...' : 'Reset Password'}
                 </Button>
+              </form>
 
-                <div className="text-center">
-                  <button
-                    onClick={() => setEmailSent(false)}
-                    className="text-sm text-purple-600 hover:text-purple-700 hover:underline"
-                  >
-                    Didn't receive the email? Resend
-                  </button>
-                </div>
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => { setOtpStep(false); setError(''); }}
+                  className="text-sm text-purple-600 hover:text-purple-700 hover:underline"
+                >
+                  Didn't receive the code? Go back
+                </button>
               </div>
             </CardContent>
           </Card>
@@ -461,7 +618,7 @@ export function CustomerForgotPassword() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <ReccurLogo size="lg" showText={true} />
+            <SuscriblyLogo size="lg" showText={true} />
           </div>
           <p className="text-gray-600">Customer Portal</p>
         </div>
@@ -470,7 +627,7 @@ export function CustomerForgotPassword() {
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Forgot Password?</CardTitle>
             <CardDescription className="text-center">
-              Enter your email to receive password reset instructions
+              Enter your email to receive a password reset OTP
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -498,8 +655,8 @@ export function CustomerForgotPassword() {
                 )}
               </div>
 
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
-                Send Reset Link
+              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+                {isLoading ? 'Sending...' : 'Send Reset Code'}
               </Button>
             </form>
 
@@ -527,9 +684,33 @@ export function CustomerForgotEmail() {
   const [accountName, setAccountName] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [countdown, setCountdown] = useState(600); // 10 minutes in seconds
+  const [banksList, setBanksList] = useState<BankResponse[]>([]);
+  const [isLoadingBanks, setIsLoadingBanks] = useState(false);
+  const [isVerifyingAccount, setIsVerifyingAccount] = useState(false);
+
+  // Platform collection account details (configurable via env vars)
+  const platformAccountName = import.meta.env.VITE_PLATFORM_ACCOUNT_NAME || 'Suscribly Technologies Ltd';
+  const platformAccountNumber = import.meta.env.VITE_PLATFORM_ACCOUNT_NUMBER || '1000012345';
+  const platformBankName = import.meta.env.VITE_PLATFORM_BANK_NAME || 'Rubies MFB';
+
+  // Load banks from API
+  useEffect(() => {
+    const loadBanks = async () => {
+      setIsLoadingBanks(true);
+      try {
+        const response = await billingApi.getBanks(0, 200);
+        setBanksList(response.content || []);
+      } catch (err) {
+        console.error('Failed to load banks:', err);
+      } finally {
+        setIsLoadingBanks(false);
+      }
+    };
+    loadBanks();
+  }, []);
 
   // Countdown timer effect
-  React.useEffect(() => {
+  useEffect(() => {
     if (step !== 'waiting') return;
 
     const timer = setInterval(() => {
@@ -542,14 +723,8 @@ export function CustomerForgotEmail() {
       });
     }, 1000);
 
-    // For demo: auto-verify after 5 seconds
-    const demoTimer = setTimeout(() => {
-      setStep('success');
-    }, 5000);
-
     return () => {
       clearInterval(timer);
-      clearTimeout(demoTimer);
     };
   }, [step]);
 
@@ -558,12 +733,6 @@ export function CustomerForgotEmail() {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-
-  const banks = [
-    'Access Bank', 'GTBank', 'First Bank', 'UBA', 'Zenith Bank',
-    'Fidelity Bank', 'Union Bank', 'Sterling Bank', 'Stanbic IBTC',
-    'Wema Bank', 'Polaris Bank', 'Ecobank', 'Keystone Bank', 'Rubies MFB'
-  ];
 
   const steps = [
     { id: 'account', label: 'Account', number: 1 },
@@ -623,17 +792,39 @@ export function CustomerForgotEmail() {
     setStep('bank');
   };
 
-  const handleBankSubmit = (e: React.FormEvent) => {
+  const handleBankSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.bankName) {
       setError('Please select your bank');
       return;
     }
-    
-    // Mock name enquiry - in real app, call API
-    setAccountName('John Doe');
+
+    // Find bank code for the selected bank
+    const selectedBank = banksList.find(b => b.bankName === formData.bankName);
+    const bankCode = selectedBank?.bankCode;
+    if (!bankCode) {
+      setError('Could not find bank code. Please try another bank.');
+      return;
+    }
+
+    setIsVerifyingAccount(true);
     setError('');
-    setStep('verify');
+    try {
+      const result = await billingApi.verifyBankAccount({
+        bankCode,
+        accountNumber: formData.accountNumber,
+      });
+      if (result.accountName) {
+        setAccountName(result.accountName);
+        setStep('verify');
+      } else {
+        setError('Could not verify account. Please check your details.');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Account verification failed. Please check your details.');
+    } finally {
+      setIsVerifyingAccount(false);
+    }
   };
 
   const handleVerificationSubmit = (e: React.FormEvent) => {
@@ -650,7 +841,7 @@ export function CustomerForgotEmail() {
         <div className="w-full max-w-lg">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <ReccurLogo size="lg" showText={true} />
+              <SuscriblyLogo size="lg" showText={true} />
             </div>
           </div>
 
@@ -708,7 +899,7 @@ export function CustomerForgotEmail() {
         <div className="w-full max-w-lg">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <ReccurLogo size="lg" showText={true} />
+              <SuscriblyLogo size="lg" showText={true} />
             </div>
           </div>
 
@@ -742,8 +933,8 @@ export function CustomerForgotEmail() {
                   </div>
                   <div className="flex-1">
                     <p className="font-semibold text-gray-900 mb-1">Transfer ₦500.00 to:</p>
-                    <p className="text-sm text-gray-600">Reccur Technologies Ltd</p>
-                    <p className="text-sm font-mono text-gray-800 font-medium">1000012345 • Rubies MFB</p>
+                    <p className="text-sm text-gray-600">{platformAccountName}</p>
+                    <p className="text-sm font-mono text-gray-800 font-medium">{platformAccountNumber} • {platformBankName}</p>
                   </div>
                 </div>
               </div>
@@ -792,7 +983,7 @@ export function CustomerForgotEmail() {
         <div className="w-full max-w-lg">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <ReccurLogo size="lg" showText={true} />
+              <SuscriblyLogo size="lg" showText={true} />
             </div>
           </div>
 
@@ -835,16 +1026,16 @@ export function CustomerForgotEmail() {
                   <div className="space-y-3">
                     <div>
                       <p className="text-purple-200 text-xs mb-0.5">Account Name</p>
-                      <p className="font-semibold">Reccur Technologies Ltd</p>
+                      <p className="font-semibold">{platformAccountName}</p>
                     </div>
                     <div className="flex gap-4">
                       <div className="flex-1">
                         <p className="text-purple-200 text-xs mb-0.5">Account Number</p>
-                        <p className="font-mono font-semibold text-lg tracking-wider">1000012345</p>
+                        <p className="font-mono font-semibold text-lg tracking-wider">{platformAccountNumber}</p>
                       </div>
                       <div>
                         <p className="text-purple-200 text-xs mb-0.5">Bank</p>
-                        <p className="font-semibold">Rubies MFB</p>
+                        <p className="font-semibold">{platformBankName}</p>
                       </div>
                     </div>
                     <div className="pt-2 border-t border-purple-500/30">
@@ -893,7 +1084,7 @@ export function CustomerForgotEmail() {
         <div className="w-full max-w-lg">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <ReccurLogo size="lg" showText={true} />
+              <SuscriblyLogo size="lg" showText={true} />
             </div>
           </div>
 
@@ -915,11 +1106,15 @@ export function CustomerForgotEmail() {
                     value={formData.bankName}
                     onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
                     className={`w-full h-12 px-4 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-gray-900 ${error ? 'border-red-500' : 'border-gray-200'}`}
+                    disabled={isLoadingBanks}
                   >
-                    <option value="">Select your bank</option>
-                    {banks.sort().map((bank) => (
-                      <option key={bank} value={bank}>{bank}</option>
-                    ))}
+                    <option value="">{isLoadingBanks ? 'Loading banks...' : 'Select your bank'}</option>
+                    {banksList
+                      .filter(b => b.bankName)
+                      .sort((a, b) => (a.bankName || '').localeCompare(b.bankName || ''))
+                      .map((bank) => (
+                        <option key={bank.bankId} value={bank.bankName!}>{bank.bankName}</option>
+                      ))}
                   </select>
                   {error && (
                     <div className="flex items-center gap-2 text-sm text-red-600">
@@ -929,8 +1124,8 @@ export function CustomerForgotEmail() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 h-12 text-base">
-                  Continue
+                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 h-12 text-base" disabled={isVerifyingAccount}>
+                  {isVerifyingAccount ? 'Verifying account...' : 'Continue'}
                 </Button>
 
                 <button
@@ -953,7 +1148,7 @@ export function CustomerForgotEmail() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-6">
           <div className="flex justify-center mb-4">
-            <ReccurLogo size="lg" showText={true} />
+            <SuscriblyLogo size="lg" showText={true} />
           </div>
           <p className="text-gray-500">Customer Portal</p>
         </div>
@@ -1041,7 +1236,7 @@ export function CustomerSignup() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <ReccurLogo size="lg" showText={true} />
+            <SuscriblyLogo size="lg" showText={true} />
           </div>
         </div>
 

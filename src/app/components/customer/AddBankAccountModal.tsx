@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,61 +16,124 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/app/components/ui/select';
-import { CheckIcon } from '@/app/components/icons/FinanceIcons';
+import { CheckIcon, AlertCircleIcon } from '@/app/components/icons/FinanceIcons';
 import { toast } from 'sonner';
+import { billingApi } from '@/lib/api';
+import type { BankResponse } from '@/lib/api/billing';
+
+export interface BankAccountDisplay {
+  mandateId: string;
+  bankId: string | null;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  isVerified: boolean;
+}
 
 interface AddBankAccountModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess?: (account: any) => void;
+  onSuccess?: (account: BankAccountDisplay) => void;
+  banksMap?: Record<string, BankResponse>;
 }
 
-const nigerianBanks = [
-  'Access Bank',
-  'GTBank',
-  'First Bank',
-  'Zenith Bank',
-  'UBA',
-  'Fidelity Bank',
-  'Union Bank',
-  'Stanbic IBTC',
-  'Sterling Bank',
-  'Wema Bank',
-  'Ecobank',
-  'FCMB',
-  'Polaris Bank',
-  'Keystone Bank',
-  'Heritage Bank',
-].sort();
-
-export function AddBankAccountModal({ open, onOpenChange, onSuccess }: AddBankAccountModalProps) {
-  const [bankName, setBankName] = useState('');
+export function AddBankAccountModal({ open, onOpenChange, onSuccess, banksMap: externalBanksMap }: AddBankAccountModalProps) {
+  const [selectedBankId, setSelectedBankId] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  const handleAccountNumberChange = (value: string) => {
+  // Banks state - use passed-in map or load our own
+  const [banks, setBanks] = useState<BankResponse[]>([]);
+  const [banksMap, setBanksMap] = useState<Record<string, BankResponse>>({});
+  const [isLoadingBanks, setIsLoadingBanks] = useState(false);
+
+  useEffect(() => {
+    if (externalBanksMap && Object.keys(externalBanksMap).length > 0) {
+      setBanksMap(externalBanksMap);
+      setBanks(
+        Object.values(externalBanksMap)
+          .filter((b) => b.bankName)
+          .sort((a, b) => (a.bankName || '').localeCompare(b.bankName || ''))
+      );
+    } else if (open && banks.length === 0) {
+      loadBanks();
+    }
+  }, [open, externalBanksMap]);
+
+  const loadBanks = async () => {
+    setIsLoadingBanks(true);
+    try {
+      const res = await billingApi.getBanks(0, 200);
+      const bMap: Record<string, BankResponse> = {};
+      res.content.forEach((bank) => {
+        bMap[bank.bankId] = bank;
+      });
+      setBanksMap(bMap);
+      setBanks(
+        res.content
+          .filter((b) => b.bankName)
+          .sort((a, b) => (a.bankName || '').localeCompare(b.bankName || ''))
+      );
+    } catch {
+      toast.error('Failed to load banks list');
+    } finally {
+      setIsLoadingBanks(false);
+    }
+  };
+
+  const handleAccountNumberChange = async (value: string) => {
     const cleaned = value.replace(/\D/g, '');
     if (cleaned.length <= 10) {
       setAccountNumber(cleaned);
+      setAccountName('');
+      setVerifyError('');
 
-      // Simulate account name lookup when 10 digits entered
-      if (cleaned.length === 10 && bankName) {
+      // Verify account when 10 digits entered and bank selected
+      if (cleaned.length === 10 && selectedBankId) {
+        const bank = banksMap[selectedBankId];
+        if (!bank?.bankCode) {
+          setVerifyError('Selected bank has no bank code for verification');
+          return;
+        }
+
         setIsVerifying(true);
-        setTimeout(() => {
-          setAccountName('Adebayo Johnson');
+        setVerifyError('');
+        try {
+          const result = await billingApi.verifyBankAccount({
+            bankCode: bank.bankCode,
+            accountNumber: cleaned,
+          });
+          if (result.accountName) {
+            setAccountName(result.accountName);
+            toast.success('Account verified successfully');
+          } else {
+            setVerifyError('Could not verify account. Please check details and try again.');
+          }
+        } catch (err: any) {
+          setVerifyError(err?.response?.data?.message || err?.response?.data?.responseMessage || 'Account verification failed. Please check your details.');
+        } finally {
           setIsVerifying(false);
-          toast.success('Account verified successfully');
-        }, 1500);
-      } else {
-        setAccountName('');
+        }
       }
     }
   };
 
-  const handleAddAccount = () => {
-    if (!bankName || !accountNumber || !accountName) {
+  const handleBankChange = (bankId: string) => {
+    setSelectedBankId(bankId);
+    setAccountName('');
+    setVerifyError('');
+
+    // Re-verify if account number already entered
+    if (accountNumber.length === 10) {
+      handleAccountNumberChange(accountNumber);
+    }
+  };
+
+  const handleAddAccount = async () => {
+    if (!selectedBankId || !accountNumber || !accountName) {
       toast.error('Please complete all fields');
       return;
     }
@@ -80,34 +143,33 @@ export function AddBankAccountModal({ open, onOpenChange, onSuccess }: AddBankAc
       return;
     }
 
-    setIsAdding(true);
+    // Just collect verified bank details - no mandate creation here
+    // Mandate will be created at subscription checkout time
+    const bank = banksMap[selectedBankId];
+    const newAccount: BankAccountDisplay = {
+      mandateId: `new-${Date.now()}`,
+      bankId: selectedBankId,
+      bankName: bank?.bankName || 'Bank',
+      accountNumber,
+      accountName,
+      isVerified: true,
+    };
 
-    // Simulate adding account
-    setTimeout(() => {
-      const newAccount = {
-        id: `BA${Date.now()}`,
-        bankName,
-        accountNumber,
-        accountName,
-        isVerified: true,
-      };
+    toast.success('Bank account verified!');
 
-      toast.success('Bank account added successfully!');
+    if (onSuccess) {
+      onSuccess(newAccount);
+    }
 
-      if (onSuccess) {
-        onSuccess(newAccount);
-      }
-
-      setIsAdding(false);
-      onOpenChange(false);
-      resetModal();
-    }, 1000);
+    onOpenChange(false);
+    resetModal();
   };
 
   const resetModal = () => {
-    setBankName('');
+    setSelectedBankId('');
     setAccountNumber('');
     setAccountName('');
+    setVerifyError('');
     setIsVerifying(false);
     setIsAdding(false);
   };
@@ -129,18 +191,22 @@ export function AddBankAccountModal({ open, onOpenChange, onSuccess }: AddBankAc
           <div className="space-y-4">
             <div>
               <Label htmlFor="bank-name">Bank Name</Label>
-              <Select value={bankName} onValueChange={setBankName}>
-                <SelectTrigger id="bank-name">
-                  <SelectValue placeholder="Select your bank" />
-                </SelectTrigger>
-                <SelectContent>
-                  {nigerianBanks.map((bank) => (
-                    <SelectItem key={bank} value={bank}>
-                      {bank}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isLoadingBanks ? (
+                <div className="h-10 bg-gray-100 rounded-md animate-pulse mt-1" />
+              ) : (
+                <Select value={selectedBankId} onValueChange={handleBankChange}>
+                  <SelectTrigger id="bank-name">
+                    <SelectValue placeholder="Select your bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {banks.map((bank) => (
+                      <SelectItem key={bank.bankId} value={bank.bankId}>
+                        {bank.bankName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div>
@@ -150,10 +216,16 @@ export function AddBankAccountModal({ open, onOpenChange, onSuccess }: AddBankAc
                 placeholder="Enter 10-digit account number"
                 value={accountNumber}
                 onChange={(e) => handleAccountNumberChange(e.target.value)}
-                disabled={!bankName}
+                disabled={!selectedBankId}
               />
               {isVerifying && (
                 <p className="text-sm text-blue-600 mt-1">Verifying account...</p>
+              )}
+              {verifyError && (
+                <div className="flex items-start gap-2 mt-1">
+                  <AlertCircleIcon className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-red-600">{verifyError}</p>
+                </div>
               )}
             </div>
 

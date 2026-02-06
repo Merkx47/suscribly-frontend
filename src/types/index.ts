@@ -41,8 +41,8 @@ export interface PlatformPlan {
   };
 }
 
-// Tenant
-export interface Tenant {
+// Business (for Admin portal - represents a business using the platform)
+export interface Business {
   id: string;
   businessName: string;
   email: string;
@@ -64,7 +64,7 @@ export interface Customer {
   subscriptions: number;
   totalPaid: number;
   joinedDate: string;
-  tenantId?: string;
+  businessId?: string;
 }
 
 // Product
@@ -75,7 +75,7 @@ export interface Product {
   amount: number;
   status: 'Active' | 'Inactive';
   createdDate: string;
-  tenantId?: string;
+  businessId?: string;
 }
 
 // Subscription Plan
@@ -89,7 +89,7 @@ export interface SubscriptionPlan {
   status: 'Active' | 'Inactive';
   subscribers: number;
   productId?: string;
-  tenantId?: string;
+  businessId?: string;
 }
 
 // Subscription

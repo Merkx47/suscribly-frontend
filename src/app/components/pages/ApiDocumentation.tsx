@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { KeyIcon, CodeIcon, BookOpenIcon } from '@/app/components/icons/FinanceIcons';
 
@@ -52,7 +52,7 @@ export function ApiDocumentation() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <div className="flex items-center gap-4">
               <Link to="/">
@@ -73,7 +73,7 @@ export function ApiDocumentation() {
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold text-gray-900 mb-4">API Documentation</h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Integrate Reccur's recurring payment platform into your applications with our comprehensive REST API.
+            Integrate Suscribly's recurring payment platform into your applications with our comprehensive REST API.
           </p>
         </div>
 
@@ -88,7 +88,7 @@ export function ApiDocumentation() {
             </CardHeader>
             <CardContent>
               <p className="text-gray-600">
-                Sign up for a Reccur account and retrieve your API keys from the dashboard settings.
+                Sign up for a Suscribly account and retrieve your API keys from the dashboard settings.
               </p>
             </CardContent>
           </Card>

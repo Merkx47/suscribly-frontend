@@ -17,8 +17,8 @@ import {
   LogOutIcon 
 } from '@/app/components/icons/FinanceIcons';
 
-export function QuickActions({ type }: { type: 'platform' | 'tenant' | 'customer' }) {
-  if (type === 'platform') {
+export function QuickActions({ type }: { type: 'admin' | 'business' | 'customer' }) {
+  if (type === 'admin') {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -30,11 +30,11 @@ export function QuickActions({ type }: { type: 'platform' | 'tenant' | 'customer
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Platform Actions</DropdownMenuLabel>
+          <DropdownMenuLabel>Admin Actions</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem>
             <PlusIcon className="h-4 w-4 mr-2" />
-            Add New Tenant
+            Add New Business
           </DropdownMenuItem>
           <DropdownMenuItem>
             <PackageIcon className="h-4 w-4 mr-2" />
@@ -47,14 +47,14 @@ export function QuickActions({ type }: { type: 'platform' | 'tenant' | 'customer
           <DropdownMenuSeparator />
           <DropdownMenuItem>
             <SettingsIcon className="h-4 w-4 mr-2" />
-            Platform Settings
+            Admin Settings
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     );
   }
 
-  if (type === 'tenant') {
+  if (type === 'business') {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

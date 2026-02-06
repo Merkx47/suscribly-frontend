@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import { ShieldIcon, CheckCircleIcon, LockIcon, FileTextIcon } from '@/app/components/icons/FinanceIcons';
 
 export function Compliance() {
@@ -39,7 +39,7 @@ export function Compliance() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <Link to="/">
               <Button variant="ghost">Back to Home</Button>
@@ -52,7 +52,7 @@ export function Compliance() {
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold text-gray-900 mb-4">Compliance & Security</h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            We take security and compliance seriously. Reccur meets the highest standards for financial services and data protection in Nigeria.
+            We take security and compliance seriously. Suscribly meets the highest standards for financial services and data protection in Nigeria.
           </p>
         </div>
 
@@ -81,7 +81,7 @@ export function Compliance() {
           <CardContent className="prose max-w-none">
             <h3 className="text-xl font-semibold text-gray-900 mb-3">Central Bank of Nigeria (CBN)</h3>
             <p className="text-gray-700 leading-relaxed mb-6">
-              Reccur operates in full compliance with CBN guidelines for payment service providers. We maintain proper licensing and adhere to all regulatory requirements for direct debit and recurring payment services.
+              Suscribly operates in full compliance with CBN guidelines for payment service providers. We maintain proper licensing and adhere to all regulatory requirements for direct debit and recurring payment services.
             </p>
 
             <h3 className="text-xl font-semibold text-gray-900 mb-3">Nigeria Data Protection Regulation (NDPR)</h3>
@@ -96,7 +96,7 @@ export function Compliance() {
 
             <h3 className="text-xl font-semibold text-gray-900 mb-3">Know Your Customer (KYC)</h3>
             <p className="text-gray-700 leading-relaxed">
-              We implement strict KYC procedures for all tenant businesses using our platform, ensuring proper identity verification and business legitimacy checks.
+              We implement strict KYC procedures for all businesses using our platform, ensuring proper identity verification and business legitimacy checks.
             </p>
           </CardContent>
         </Card>

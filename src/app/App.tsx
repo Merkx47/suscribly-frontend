@@ -2,25 +2,29 @@ import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { BuildingIcon, StoreIcon, UserIcon, ArrowRightIcon } from '@/app/components/icons/FinanceIcons';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import { Toaster } from '@/app/components/ui/sonner';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 // Lazy load the portal components
 import { lazy, Suspense } from 'react';
+import { ProtectedRoute } from '@/app/components/ProtectedRoute';
 
-const PlatformAdminDashboard = lazy(() => import('@/app/components/portals/PlatformAdminDashboard').then(m => ({ default: m.PlatformAdminDashboard })));
-const TenantDashboard = lazy(() => import('@/app/components/portals/TenantDashboard').then(m => ({ default: m.TenantDashboard })));
+const AdminDashboard = lazy(() => import('@/app/components/portals/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const BusinessDashboard = lazy(() => import('@/app/components/portals/BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));
 const CustomerPortal = lazy(() => import('@/app/components/portals/CustomerPortal').then(m => ({ default: m.CustomerPortal })));
 
 // Authentication components
 const AdminLogin = lazy(() => import('@/app/components/auth/AdminAuth').then(m => ({ default: m.AdminLogin })));
-const TenantLogin = lazy(() => import('@/app/components/auth/TenantAuth').then(m => ({ default: m.TenantLogin })));
-const TenantSignup = lazy(() => import('@/app/components/auth/TenantAuth').then(m => ({ default: m.TenantSignup })));
+const BusinessLogin = lazy(() => import('@/app/components/auth/BusinessAuth').then(m => ({ default: m.BusinessLogin })));
+const BusinessSignup = lazy(() => import('@/app/components/auth/BusinessAuth').then(m => ({ default: m.BusinessSignup })));
 const CustomerLogin = lazy(() => import('@/app/components/auth/CustomerAuth').then(m => ({ default: m.CustomerLogin })));
 const CustomerSignup = lazy(() => import('@/app/components/auth/CustomerAuth').then(m => ({ default: m.CustomerSignup })));
 const CustomerPasswordSetup = lazy(() => import('@/app/components/auth/CustomerAuth').then(m => ({ default: m.CustomerPasswordSetup })));
 const CustomerForgotPassword = lazy(() => import('@/app/components/auth/CustomerAuth').then(m => ({ default: m.CustomerForgotPassword })));
 const CustomerForgotEmail = lazy(() => import('@/app/components/auth/CustomerAuth').then(m => ({ default: m.CustomerForgotEmail })));
+const VerifyEmailPending = lazy(() => import('@/app/components/auth/VerifyEmail').then(m => ({ default: m.VerifyEmailPending })));
+const VerifyEmailCallback = lazy(() => import('@/app/components/auth/VerifyEmail').then(m => ({ default: m.VerifyEmailCallback })));
 const SubscriptionCheckout = lazy(() => import('@/app/components/customer/SubscriptionCheckout').then(m => ({ default: m.SubscriptionCheckout })));
 
 // Page components
@@ -48,13 +52,6 @@ function LoadingFallback() {
 function PortalSelector() {
   const portals = [
     {
-      path: '/admin/login',
-      icon: BuildingIcon,
-      title: 'Platform Admin',
-      description: 'Manage all tenants and platform operations',
-      color: 'bg-blue-600',
-    },
-    {
       path: '/business/login',
       icon: StoreIcon,
       title: 'Business Dashboard',
@@ -72,8 +69,8 @@ function PortalSelector() {
 
   const faqs = [
     {
-      question: 'What is Reccur?',
-      answer: 'Reccur is a B2B2C subscription management and recurring payment platform designed specifically for Nigerian businesses. It enables automated payment collection via bank account direct debits through NIBSS.'
+      question: 'What is Suscribly?',
+      answer: 'Suscribly is a B2B2C subscription management and recurring payment platform designed specifically for Nigerian businesses. It enables automated payment collection via bank account direct debits through NIBSS.'
     },
     {
       question: 'How does direct debit work?',
@@ -81,18 +78,18 @@ function PortalSelector() {
     },
     {
       question: 'What billing cycles are supported?',
-      answer: 'Reccur supports one-time payments, daily, weekly, monthly, quarterly, yearly, and multi-year subscription billing cycles. You have full flexibility to create custom plans for your business.'
+      answer: 'Suscribly supports one-time payments, daily, weekly, monthly, quarterly, yearly, and multi-year subscription billing cycles. You have full flexibility to create custom plans for your business.'
     },
     {
       question: 'Is my data secure?',
-      answer: 'Yes, Reccur uses bank-grade security with encrypted data transmission and storage. All direct debit mandates are processed through NIBBS, ensuring compliance with Nigerian banking regulations.'
+      answer: 'Yes, Suscribly uses bank-grade security with encrypted data transmission and storage. All direct debit mandates are processed through NIBBS, ensuring compliance with Nigerian banking regulations.'
     },
     {
       question: 'How do I get started as a business?',
       answer: 'Click on the Business Dashboard portal above to sign up. Once registered, you can create subscription plans, add customers, and start collecting recurring payments immediately.'
     },
     {
-      question: 'What fees does Reccur charge?',
+      question: 'What fees does Suscribly charge?',
       answer: 'Pricing is transparent and competitive. Contact our sales team for detailed pricing information tailored to your business volume and needs.'
     }
   ];
@@ -104,7 +101,7 @@ function PortalSelector() {
         <div className="max-w-5xl w-full">
           <div className="text-center mb-12">
             <div className="mb-6 flex justify-center">
-              <ReccurLogo size="xl" showText={true} />
+              <SuscriblyLogo size="xl" showText={true} />
             </div>
             <div className="mb-4">
               <p className="text-xl text-gray-600">
@@ -128,7 +125,7 @@ function PortalSelector() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
             {portals.map((portal) => {
               const Icon = portal.icon;
               return (
@@ -160,7 +157,7 @@ function PortalSelector() {
       {/* Key Features Section */}
       <div className="bg-white py-16">
         <div className="max-w-5xl mx-auto px-4">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">Why Choose Reccur?</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">Why Choose Suscribly?</h2>
           <p className="text-gray-600 text-center mb-12 max-w-2xl mx-auto">
             Everything you need to manage recurring payments and grow your subscription business
           </p>
@@ -262,7 +259,7 @@ function PortalSelector() {
         <div className="max-w-4xl mx-auto px-4">
           <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">Frequently Asked Questions</h2>
           <p className="text-gray-600 text-center mb-12">
-            Everything you need to know about Reccur
+            Everything you need to know about Suscribly
           </p>
           <div className="space-y-4">
             {faqs.map((faq, index) => (
@@ -286,7 +283,7 @@ function PortalSelector() {
             <CardHeader>
               <CardTitle className="text-3xl text-white">Ready to Get Started?</CardTitle>
               <CardDescription className="text-blue-50 text-lg">
-                Join hundreds of Nigerian businesses using Reccur to manage recurring payments
+                Join hundreds of Nigerian businesses using Suscribly to manage recurring payments
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -313,7 +310,7 @@ function PortalSelector() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div>
               <div className="mb-4">
-                <ReccurLogo size="sm" showText={true} />
+                <SuscriblyLogo size="sm" showText={true} />
               </div>
               <p className="text-sm">
                 Professional subscription management platform for Nigerian businesses
@@ -345,7 +342,7 @@ function PortalSelector() {
             </div>
           </div>
           <div className="border-t border-gray-800 pt-8 text-center text-sm">
-            <p>&copy; 2024 Reccur. All rights reserved. Professional, trustworthy, modern fintech platform for Nigerian businesses.</p>
+            <p>&copy; 2024 Suscribly. All rights reserved. Professional, trustworthy, modern fintech platform for Nigerian businesses.</p>
           </div>
         </div>
       </div>
@@ -356,19 +353,38 @@ function PortalSelector() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Toaster position="top-center" richColors />
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
+      <AuthProvider>
+        <Toaster position="top-center" richColors />
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
           <Route path="/" element={<PortalSelector />} />
           
-          {/* Platform Admin Routes */}
+          {/* Platform Admin Routes (hidden from landing page, access via /admin/login) */}
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/dashboard" element={<PlatformAdminDashboard />} />
+          <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/businesses" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/service-tiers" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/activity" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
 
-          {/* Business/Tenant Routes */}
-          <Route path="/business/login" element={<TenantLogin />} />
-          <Route path="/business/signup" element={<TenantSignup />} />
-          <Route path="/business/dashboard" element={<TenantDashboard />} />
+          {/* Business Routes */}
+          <Route path="/business/login" element={<BusinessLogin />} />
+          <Route path="/business/signup" element={<BusinessSignup />} />
+          <Route path="/business/verify-email" element={<VerifyEmailPending />} />
+          <Route path="/business/verify" element={<VerifyEmailCallback />} />
+          {/* Business dashboard with slug - supports all sections */}
+          <Route path="/business/:slug/dashboard" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/products" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/plans" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/customers" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/subscriptions" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/mandates" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/transactions" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/coupons" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/webhooks" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/settings" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          {/* Redirect old path to login */}
+          <Route path="/business/dashboard" element={<BusinessLogin />} />
 
           {/* Customer Routes */}
           <Route path="/customer/login" element={<CustomerLogin />} />
@@ -376,8 +392,15 @@ export default function App() {
           <Route path="/customer/setup-password" element={<CustomerPasswordSetup />} />
           <Route path="/customer/forgot-password" element={<CustomerForgotPassword />} />
           <Route path="/customer/forgot-email" element={<CustomerForgotEmail />} />
-          <Route path="/customer/checkout" element={<SubscriptionCheckout />} />
-          <Route path="/customer/dashboard" element={<CustomerPortal />} />
+          <Route path="/customer/checkout" element={<ProtectedRoute><SubscriptionCheckout /></ProtectedRoute>} />
+          {/* Customer portal with ID - supports all sections */}
+          <Route path="/customer/:customerId/dashboard" element={<ProtectedRoute><CustomerPortal /></ProtectedRoute>} />
+          <Route path="/customer/:customerId/subscriptions" element={<ProtectedRoute><CustomerPortal /></ProtectedRoute>} />
+          <Route path="/customer/:customerId/payments" element={<ProtectedRoute><CustomerPortal /></ProtectedRoute>} />
+          <Route path="/customer/:customerId/bank-accounts" element={<ProtectedRoute><CustomerPortal /></ProtectedRoute>} />
+          <Route path="/customer/:customerId/settings" element={<ProtectedRoute><CustomerPortal /></ProtectedRoute>} />
+          {/* Redirect old path to login */}
+          <Route path="/customer/dashboard" element={<CustomerLogin />} />
           
           {/* Product Pages */}
           <Route path="/pricing" element={<Pricing />} />
@@ -395,8 +418,9 @@ export default function App() {
           <Route path="/compliance" element={<Compliance />} />
           
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+          </Routes>
+        </Suspense>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

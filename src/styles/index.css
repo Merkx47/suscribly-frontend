@@ -3,37 +3,15 @@
 @import './theme.css';
 
 /* ========================================
-   Safari Fix: Disable transitions and animations
-   to stop Safari "dancing" issue
+   Global Styles
    ======================================== */
 
-/* Disable transitions and animations globally */
+/* Font smoothing for better text rendering */
 *,
 *::before,
 *::after {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: none !important;
-  -webkit-transition: none !important;
-  animation: none !important;
-  -webkit-animation: none !important;
-}
-
-/* Disable transforms on buttons specifically (Safari dancing fix) */
-button:not([data-radix-collection-item]),
-[role="button"]:not([data-radix-collection-item]),
-a {
-  transform: none !important;
-  -webkit-transform: none !important;
-}
-
-/* Allow Radix UI popper/dropdown positioning to work properly */
-[data-radix-popper-content-wrapper],
-[data-radix-select-content],
-[data-radix-select-viewport],
-[data-slot="select-content"] {
-  transform: unset !important;
-  -webkit-transform: unset !important;
 }
 
 /* ========================================

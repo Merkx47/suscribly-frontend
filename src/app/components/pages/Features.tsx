@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { ReccurLogo } from '@/app/components/ReccurLogo';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import {
   CreditCardIcon,
   UsersIcon,
@@ -131,7 +131,7 @@ export function Features() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="hover:opacity-80 transition-opacity">
-              <ReccurLogo size="md" showText={true} />
+              <SuscriblyLogo size="md" showText={true} />
             </Link>
             <div className="flex items-center gap-4">
               <Link to="/">
@@ -178,7 +178,7 @@ export function Features() {
         {/* Benefits Section */}
         <div className="bg-gradient-to-r from-blue-600 to-green-600 rounded-2xl p-12 mb-20 text-white">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4">Why Choose Reccur?</h2>
+            <h2 className="text-4xl font-bold mb-4">Why Choose Suscribly?</h2>
             <p className="text-xl text-blue-100">
               Built specifically for Nigerian businesses
             </p>

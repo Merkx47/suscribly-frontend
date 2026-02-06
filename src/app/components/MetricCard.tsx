@@ -35,7 +35,7 @@ export function MetricCard({ title, value, change, icon: Icon, iconColor = 'text
               </svg>
             )}
             <span className={`text-sm font-medium ${isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-gray-600'}`}>
-              {change > 0 && '+'}{change}%  from last month
+              {change > 0 ? '+' : ''}{change.toFixed(1)}% from last month
             </span>
           </div>
         )}

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { MetricCard } from '@/app/components/MetricCard';
 import { StatusBadge } from '@/app/components/StatusBadges';
@@ -10,6 +11,10 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { Switch } from '@/app/components/ui/switch';
 import { PortalHeader } from '@/app/components/PortalHeader';
 import { TablePagination } from '@/app/components/TablePagination';
+import { useAuth } from '@/contexts/AuthContext';
+import { useCustomers, usePlans, useSubscriptions, useMandates, useDashboardMetrics } from '@/hooks/useApi';
+import { customersApi, plansApi, productsApi, subscriptionsApi, billingApi, businessesApi, settlementsApi, couponsApi, authApi, webhooksApi, CreateCustomerRequest, CreatePlanRequest, CreateSubscriptionRequest } from '@/lib/api';
+import type { SettlementResponse, ProductResponse, TransactionResponse, WebhookResponse } from '@/lib/api';
 import {
   UsersIcon,
   NairaIcon,
@@ -42,19 +47,6 @@ import {
 } from '@/app/components/icons/FinanceIcons';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
-  tenantMetrics,
-  products,
-  subscriptionPlans,
-  customers,
-  subscriptions,
-  mandates,
-  transactions,
-  coupons,
-  teamMembers,
-  settlements,
-  chartData,
-} from '@/data/mockData';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -76,26 +68,10 @@ import {
   SheetTitle,
 } from '@/app/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/app/components/ui/command';
 import { toast } from 'sonner';
 
-// Nigerian banks list for bank account linking
-const nigerianBanks = [
-  'Access Bank',
-  'GTBank',
-  'First Bank',
-  'Zenith Bank',
-  'UBA',
-  'Fidelity Bank',
-  'Union Bank',
-  'Stanbic IBTC',
-  'Sterling Bank',
-  'Wema Bank',
-  'Ecobank',
-  'FCMB',
-  'Polaris Bank',
-  'Keystone Bank',
-  'Heritage Bank',
-].sort();
 
 type ActiveSection = 'overview' | 'products' | 'plans' | 'customers' | 'subscriptions' | 'mandates' | 'transactions' | 'coupons' | 'webhooks' | 'settings';
 
@@ -118,33 +94,51 @@ const navItems: NavItem[] = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-export function TenantDashboard() {
-  // Current tenant context - DSTV Nigeria
-  const CURRENT_TENANT_ID = 'TNT002';
+export function BusinessDashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { slug } = useParams();
+  const { user, business, isAuthenticated, isLoading: authLoading, logout, refreshBusiness } = useAuth();
 
-  // Filter data for current tenant
-  const tenantCustomers = customers.filter(c => c.tenantId === CURRENT_TENANT_ID);
-  const tenantCustomerIds = tenantCustomers.map(c => c.id);
-  const tenantSubscriptions = subscriptions.filter(s => tenantCustomerIds.includes(s.customerId));
-  const tenantMandates = mandates.filter(m => tenantCustomerIds.includes(m.customerId));
-  const tenantTransactions = transactions.filter(t => tenantCustomerIds.includes(t.customerId));
-  const tenantPlans = subscriptionPlans.filter(p => p.tenantId === CURRENT_TENANT_ID);
-
-  // Calculate actual metrics for current tenant (TNT002 - DSTV Nigeria)
-  const activeSubscriptionsCount = tenantSubscriptions.filter(s => s.status === 'Active').length;
-  const successfulTransactionsCount = tenantTransactions.filter(t => t.status === 'Success').length;
-  const failedTransactionsCount = tenantTransactions.filter(t => t.status === 'Failed').length;
-  const totalRevenue = tenantTransactions
-    .filter(t => t.status === 'Success')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const monthlyRevenue = tenantSubscriptions
-    .filter(s => s.status === 'Active')
-    .reduce((sum, s) => sum + s.amount, 0);
-  const upcomingRenewalsCount = tenantSubscriptions.filter(s =>
-    s.status === 'Active' && new Date(s.nextBillingDate) <= new Date('2026-02-28')
-  ).length;
-
+  // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS
+  // State hooks - moved to top to comply with Rules of Hooks
   const [activeSection, setActiveSection] = useState<ActiveSection>('overview');
+
+  // Sync URL to active section
+  useEffect(() => {
+    const path = location.pathname;
+    const sectionMap: Record<string, ActiveSection> = {
+      'dashboard': 'overview',
+      'products': 'products',
+      'plans': 'plans',
+      'customers': 'customers',
+      'subscriptions': 'subscriptions',
+      'mandates': 'mandates',
+      'transactions': 'transactions',
+      'coupons': 'coupons',
+      'webhooks': 'webhooks',
+      'settings': 'settings',
+    };
+
+    // Extract section from path (e.g., /business/slug/products -> products)
+    const pathParts = path.split('/');
+    const lastPart = pathParts[pathParts.length - 1];
+    const section = sectionMap[lastPart];
+
+    if (section && section !== activeSection) {
+      setActiveSection(section);
+    }
+  }, [location.pathname]);
+
+  // Navigate to section URL when clicking sidebar
+  const handleSectionChange = (sectionId: ActiveSection) => {
+    const businessSlug = slug || business?.businessSlug;
+    if (!businessSlug) return;
+
+    const urlPath = sectionId === 'overview' ? 'dashboard' : sectionId;
+    navigate(`/business/${businessSlug}/${urlPath}`);
+    setActiveSection(sectionId);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [couponSearchQuery, setCouponSearchQuery] = useState('');
@@ -170,6 +164,31 @@ export function TenantDashboard() {
   const [createPlanModal, setCreatePlanModal] = useState(false);
   const [editPlanModal, setEditPlanModal] = useState(false);
   const [deletePlanModal, setDeletePlanModal] = useState(false);
+  // Products from backend
+  const [products, setProducts] = useState<ProductResponse[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  // Coupons from backend
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
+  const teamMembers: any[] = [];
+  const [settlements, setSettlements] = useState<SettlementResponse[]>([]);
+  const [isLoadingSettlements, setIsLoadingSettlements] = useState(false);
+  // Webhooks from backend
+  const [businessWebhooks, setBusinessWebhooks] = useState<WebhookResponse[]>([]);
+  const [isLoadingWebhooks, setIsLoadingWebhooks] = useState(false);
+
+  // Bank account settings states
+  const [settBankCode, setSettBankCode] = useState('');
+  const [settBankName, setSettBankName] = useState('');
+  const [settAccountNumber, setSettAccountNumber] = useState('');
+  const [settAccountName, setSettAccountName] = useState('');
+  const [isLookingUpSettAccount, setIsLookingUpSettAccount] = useState(false);
+  const [isSavingBankAccount, setIsSavingBankAccount] = useState(false);
+  const [settBanksList, setSettBanksList] = useState<Array<{bankCode: string; bankName: string}>>([]);
+  const [settBankOpen, setSettBankOpen] = useState(false);
+  const [custBankOpen, setCustBankOpen] = useState(false);
+  // Chart data computation moved after data fetching - see useMemo below
+
   const [addCustomerModal, setAddCustomerModal] = useState(false);
   const [viewCustomerModal, setViewCustomerModal] = useState(false);
   const [editCustomerModal, setEditCustomerModal] = useState(false);
@@ -195,6 +214,7 @@ export function TenantDashboard() {
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [verificationModal, setVerificationModal] = useState(false);
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Selected items
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
@@ -227,21 +247,29 @@ export function TenantDashboard() {
 
   // Bank account linking states for Add Customer
   const [linkBankAccount, setLinkBankAccount] = useState(false);
+  const [customerBankCode, setCustomerBankCode] = useState('');
   const [customerBankName, setCustomerBankName] = useState('');
   const [customerAccountNumber, setCustomerAccountNumber] = useState('');
   const [customerAccountName, setCustomerAccountName] = useState('');
   const [isLookingUpAccount, setIsLookingUpAccount] = useState(false);
+  const [banksList, setBanksList] = useState<Array<{bankId: string; bankCode: string; bankName: string}>>([]);
+  const [isLoadingBanks, setIsLoadingBanks] = useState(false);
 
   // Product/Plan selection states for Add Customer
   const [customerProductId, setCustomerProductId] = useState('');
   const [customerPlanId, setCustomerPlanId] = useState('');
 
-  // Form states for Coupon
+  // Form states for Coupon CRUD
   const [couponCode, setCouponCode] = useState('');
   const [couponType, setCouponType] = useState('Percentage');
   const [couponValue, setCouponValue] = useState('');
   const [couponLimit, setCouponLimit] = useState('');
   const [couponValidTo, setCouponValidTo] = useState('');
+
+  // Coupon application (Add Customer sheet)
+  const [applyCouponCode, setApplyCouponCode] = useState('');
+  const [couponValidation, setCouponValidation] = useState<{valid: boolean; couponId?: string; discountAmount: number; finalAmount: number; message: string; couponCode?: string} | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
   // Form states for Team Member
   const [teamMemberEmail, setTeamMemberEmail] = useState('');
@@ -260,17 +288,265 @@ export function TenantDashboard() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Filter logic for products - only show products for current tenant (DSTV Nigeria)
+  // Mandates refresh state
+  const [isRefreshingMandates, setIsRefreshingMandates] = useState(false);
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    // Also check localStorage directly to avoid race conditions with React state
+    const hasToken = !!localStorage.getItem('accessToken');
+
+    // Only redirect if no token in localStorage AND not authenticated in state
+    if (!authLoading && !isAuthenticated && !hasToken) {
+      navigate('/business/login');
+    }
+  }, [authLoading, isAuthenticated, navigate, user, business]);
+
+  // Fetch banks list on mount (needed for bank name resolution everywhere)
+  useEffect(() => {
+    const fetchBanks = async () => {
+      if (banksList.length === 0) {
+        setIsLoadingBanks(true);
+        try {
+          const banksPage = await billingApi.getBanks(0, 200);
+          setBanksList(banksPage.content.map((b) => ({ bankId: b.bankId || '', bankCode: b.bankCode || '', bankName: b.bankName || '' })).sort((a, b) => a.bankName.localeCompare(b.bankName)));
+        } catch (error) {
+          console.error('Failed to fetch banks:', error);
+        } finally {
+          setIsLoadingBanks(false);
+        }
+      }
+    };
+    fetchBanks();
+  }, []);
+
+  // Fetch settlements and banks when settings section is active
+  useEffect(() => {
+    if (activeSection !== 'settings') return;
+
+    const fetchSettlements = async () => {
+      setIsLoadingSettlements(true);
+      try {
+        const page = await settlementsApi.findAll(0, 50);
+        setSettlements(page.content);
+      } catch {
+        // No settlements yet is fine
+        setSettlements([]);
+      } finally {
+        setIsLoadingSettlements(false);
+      }
+    };
+    fetchSettlements();
+
+    // Load banks for bank account settings
+    if (settBanksList.length === 0) {
+      billingApi.getBanks(0, 200).then((banksPage) => {
+        setSettBanksList(banksPage.content.map((b) => ({ bankCode: b.bankCode || '', bankName: b.bankName || '' })).sort((a, b) => a.bankName.localeCompare(b.bankName)));
+      }).catch(() => {});
+    }
+
+    // Pre-fill bank account from current business data
+    if (business) {
+      setSettBankCode(business.businessBankCode || '');
+      setSettAccountNumber(business.businessAccountNumber || '');
+      setSettAccountName(business.businessAccountName || '');
+      // Find bank name from code
+      if (business.businessBankCode && settBanksList.length > 0) {
+        const found = settBanksList.find(b => b.bankCode === business.businessBankCode);
+        setSettBankName(found?.bankName || '');
+      }
+    }
+  }, [activeSection]);
+
+  // Fetch products from backend
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (!business?.businessId) return;
+      setIsLoadingProducts(true);
+      try {
+        const page = await productsApi.findAll(0, 100);
+        setProducts(page.content);
+      } catch {
+        setProducts([]);
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+    fetchProducts();
+  }, [business?.businessId]);
+
+  const refetchProducts = async () => {
+    try {
+      const page = await productsApi.findAll(0, 100);
+      setProducts(page.content);
+    } catch { /* ignore */ }
+  };
+
+  // Fetch coupons from backend
+  useEffect(() => {
+    const fetchCoupons = async () => {
+      if (!business?.businessId) return;
+      setIsLoadingCoupons(true);
+      try {
+        const page = await couponsApi.findAll(0, 100);
+        setCoupons(page.content);
+      } catch {
+        setCoupons([]);
+      } finally {
+        setIsLoadingCoupons(false);
+      }
+    };
+    fetchCoupons();
+  }, [business?.businessId]);
+
+  const refetchCoupons = async () => {
+    try {
+      const page = await couponsApi.findAll(0, 100);
+      setCoupons(page.content);
+    } catch { /* ignore */ }
+  };
+
+  // Fetch webhooks from backend
+  useEffect(() => {
+    const fetchWebhooks = async () => {
+      if (!business?.businessId) return;
+      setIsLoadingWebhooks(true);
+      try {
+        const page = await webhooksApi.list(0, 100);
+        setBusinessWebhooks(page.content);
+      } catch {
+        setBusinessWebhooks([]);
+      } finally {
+        setIsLoadingWebhooks(false);
+      }
+    };
+    fetchWebhooks();
+  }, [business?.businessId]);
+
+  const refetchWebhooks = async () => {
+    try {
+      const page = await webhooksApi.list(0, 100);
+      setBusinessWebhooks(page.content);
+    } catch { /* ignore */ }
+  };
+
+  // Fetch real data using hooks
+  const { data: businessCustomers, isLoading: customersLoading, refetch: refetchCustomers, totalElements: totalCustomers } = useCustomers(100);
+  const { data: businessPlans, isLoading: plansLoading, refetch: refetchPlans, totalElements: totalPlans } = usePlans(100);
+  const { data: businessSubscriptions, isLoading: subscriptionsLoading, refetch: refetchSubscriptions } = useSubscriptions(100);
+  const { metrics, isLoading: metricsLoading } = useDashboardMetrics();
+  const { data: businessMandates, refetch: refetchMandates } = useMandates(100);
+
+  // For features not yet implemented with API, use empty arrays
+  const [businessTransactions, setBusinessTransactions] = useState<TransactionResponse[]>([]);
+
+  // Fetch transactions
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        const data = await billingApi.listTransactions(0, 100);
+        setBusinessTransactions(data.content);
+      } catch (err) {
+        console.error('Failed to fetch transactions', err);
+      }
+    };
+    if (business?.businessId) fetchTransactions();
+  }, [business?.businessId]);
+
+  // Helper lookup functions for joining data across entities
+  const getCustomerName = (customerId: string | null) => {
+    if (!customerId) return 'Unknown Customer';
+    const customer = businessCustomers.find(c => c.customerId === customerId);
+    return customer ? `${customer.customerFirstName || ''} ${customer.customerLastName || ''}`.trim() || 'Unknown' : 'Unknown Customer';
+  };
+
+  const getPlanName = (planId: string | null) => {
+    if (!planId) return 'Unknown Plan';
+    const plan = businessPlans.find(p => p.planId === planId);
+    return plan?.planName || 'Unknown Plan';
+  };
+
+  const getPlanAmount = (planId: string | null): number => {
+    if (!planId) return 0;
+    const plan = businessPlans.find(p => p.planId === planId);
+    return parseFloat(plan?.planAmount || '0');
+  };
+
+  const getSubscriptionCount = (customerId: string) => {
+    return businessSubscriptions.filter(s => s.subscriptionCustomerId === customerId && (s.subscriptionStatus === 'ACTIVE' || s.subscriptionStatus === 'TRIALING')).length;
+  };
+
+  // Calculate metrics from real data
+  const activeSubscriptionsCount = businessSubscriptions.filter(s => s.subscriptionStatus === 'ACTIVE' || s.subscriptionStatus === 'TRIALING').length;
+  const successfulTransactionsCount = businessTransactions.filter(t => t.transactionStatus === 'SUCCESSFUL' || t.transactionStatus === 'SUCCESS').length;
+  const failedTransactionsCount = businessTransactions.filter(t => t.transactionStatus === 'FAILED').length;
+  const totalRevenue = businessTransactions.filter(t => t.transactionStatus === 'SUCCESSFUL' || t.transactionStatus === 'SUCCESS').reduce((sum, t) => sum + parseFloat(t.transactionAmount || '0'), 0);
+  const monthlyRevenue = metrics.monthlyRevenue;
+  const upcomingRenewalsCount = businessSubscriptions.filter(s =>
+    s.subscriptionStatus === 'ACTIVE' && s.subscriptionCurrentPeriodEnd && new Date(s.subscriptionCurrentPeriodEnd) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  ).length;
+
+  // Compute chart data from real transactions and subscriptions
+  const chartData = useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    const revenueByMonth = new Array(12).fill(0);
+    businessTransactions
+      .filter(t => t.transactionStatus === 'SUCCESSFUL' || t.transactionStatus === 'SUCCESS')
+      .forEach(t => {
+        if (t.transactionCreatedAt) {
+          const d = new Date(t.transactionCreatedAt);
+          if (d.getFullYear() === currentYear) {
+            revenueByMonth[d.getMonth()] += parseFloat(t.transactionAmount || '0');
+          }
+        }
+      });
+
+    const subscribersByMonth = new Array(12).fill(0);
+    businessSubscriptions.forEach(s => {
+      if (s.subscriptionCreatedAt) {
+        const d = new Date(s.subscriptionCreatedAt);
+        if (d.getFullYear() === currentYear) {
+          subscribersByMonth[d.getMonth()]++;
+        }
+      }
+    });
+
+    return {
+      revenue: months.map((month, i) => ({ month, amount: revenueByMonth[i] })),
+      subscribers: months.map((month, i) => ({ month, count: subscribersByMonth[i] })),
+    };
+  }, [businessTransactions, businessSubscriptions]);
+
+  // Show loading state - EARLY RETURNS MUST COME AFTER ALL HOOKS
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !business) {
+    return null;
+  }
+
+  // Filter logic for products - only show products for current business
   const filteredProducts = products
-    .filter((product) => product.tenantId === CURRENT_TENANT_ID)
     .filter((product) =>
-      product.name.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
-      product.description.toLowerCase().includes(productSearchQuery.toLowerCase())
+      (product.productName || '').toLowerCase().includes(productSearchQuery.toLowerCase()) ||
+      (product.productDescription || '').toLowerCase().includes(productSearchQuery.toLowerCase())
     );
 
   // Filter logic for coupons
   const filteredCoupons = coupons.filter((coupon) =>
-    coupon.code.toLowerCase().includes(couponSearchQuery.toLowerCase())
+    (coupon.couponCode || '').toLowerCase().includes(couponSearchQuery.toLowerCase()) ||
+    (coupon.couponName || '').toLowerCase().includes(couponSearchQuery.toLowerCase())
   );
 
   // Filter logic for team members
@@ -279,32 +555,32 @@ export function TenantDashboard() {
     member.email.toLowerCase().includes(teamSearchQuery.toLowerCase())
   );
 
-  // Filter customers for current tenant with search
-  const filteredCustomers = tenantCustomers.filter(
+  // Filter customers for current business with search
+  const filteredCustomers = businessCustomers.filter(
     (customer) =>
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+      `${customer.customerFirstName || ''} ${customer.customerLastName || ''}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (customer.customerEmail || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Filter subscriptions for current tenant with search
-  const filteredSubscriptions = tenantSubscriptions.filter(
+  // Filter subscriptions for current business with search
+  const filteredSubscriptions = businessSubscriptions.filter(
     (sub) =>
-      sub.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sub.planName.toLowerCase().includes(searchQuery.toLowerCase())
+      getCustomerName(sub.subscriptionCustomerId).toLowerCase().includes(searchQuery.toLowerCase()) ||
+      getPlanName(sub.subscriptionPlanId).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Filter mandates for current tenant with search
-  const filteredMandates = tenantMandates.filter(
-    (mandate) =>
-      mandate.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      mandate.bankName.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter mandates for current business with search
+  const filteredMandates = businessMandates.filter(
+    (mandate: any) =>
+      (mandate.mandatePayerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      getBankName(mandate.mandateBankId).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Filter transactions for current tenant with search
-  const filteredTransactions = tenantTransactions.filter(
-    (txn) =>
-      txn.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      txn.reference.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter transactions for current business with search
+  const filteredTransactions = businessTransactions.filter(
+    (txn: any) =>
+      (txn.transactionDescription || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (txn.transactionReference || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Pagination logic for products
@@ -328,28 +604,28 @@ export function TenantDashboard() {
     teamPage * teamPageSize
   );
 
-  // Pagination logic for customers (tenant-specific)
+  // Pagination logic for customers (business-specific)
   const customersTotalPages = Math.ceil(filteredCustomers.length / customersPageSize);
   const paginatedCustomers = filteredCustomers.slice(
     (customersPage - 1) * customersPageSize,
     customersPage * customersPageSize
   );
 
-  // Pagination logic for subscriptions (tenant-specific)
+  // Pagination logic for subscriptions (business-specific)
   const subscriptionsTotalPages = Math.ceil(filteredSubscriptions.length / subscriptionsPageSize);
   const paginatedSubscriptions = filteredSubscriptions.slice(
     (subscriptionsPage - 1) * subscriptionsPageSize,
     subscriptionsPage * subscriptionsPageSize
   );
 
-  // Pagination logic for mandates (tenant-specific)
+  // Pagination logic for mandates (business-specific)
   const mandatesTotalPages = Math.ceil(filteredMandates.length / mandatesPageSize);
   const paginatedMandates = filteredMandates.slice(
     (mandatesPage - 1) * mandatesPageSize,
     mandatesPage * mandatesPageSize
   );
 
-  // Pagination logic for transactions (tenant-specific)
+  // Pagination logic for transactions (business-specific)
   const transactionsTotalPages = Math.ceil(filteredTransactions.length / transactionsPageSize);
   const paginatedTransactions = filteredTransactions.slice(
     (transactionsPage - 1) * transactionsPageSize,
@@ -366,9 +642,9 @@ export function TenantDashboard() {
 
   const handleEditProduct = (product: any) => {
     setSelectedProduct(product);
-    setProductName(product.name);
-    setProductDescription(product.description);
-    setProductAmount(product.amount.toString());
+    setProductName(product.productName || '');
+    setProductDescription(product.productDescription || '');
+    setProductAmount(product.productAmount != null ? String(product.productAmount) : '');
     setEditProductModal(true);
   };
 
@@ -377,28 +653,72 @@ export function TenantDashboard() {
     setDeleteProductModal(true);
   };
 
-  const confirmCreateProduct = () => {
-    toast.success(`Product "${productName}" has been created`);
-    setCreateProductModal(false);
+  const confirmCreateProduct = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await productsApi.create({
+        productName,
+        productDescription: productDescription || undefined,
+        productAmount: productAmount ? parseFloat(productAmount) : undefined,
+        productBusinessId: business?.businessId || undefined,
+      });
+      toast.success(`Product "${productName}" has been created`);
+      setCreateProductModal(false);
+      refetchProducts();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to create product';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const confirmEditProduct = () => {
-    toast.success(`Product "${productName}" has been updated`);
-    setEditProductModal(false);
+  const confirmEditProduct = async () => {
+    if (isSubmitting || !selectedProduct?.productId) return;
+    setIsSubmitting(true);
+    try {
+      await productsApi.update(selectedProduct.productId, {
+        productName,
+        productDescription: productDescription || undefined,
+        productAmount: productAmount ? parseFloat(productAmount) : undefined,
+      });
+      toast.success(`Product "${productName}" has been updated`);
+      setEditProductModal(false);
+      refetchProducts();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to update product';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const confirmDeleteProduct = () => {
-    toast.success(`Product "${selectedProduct?.name}" has been deleted`);
-    setDeleteProductModal(false);
+  const confirmDeleteProduct = async () => {
+    if (isSubmitting || !selectedProduct?.productId) return;
+    setIsSubmitting(true);
+    try {
+      await productsApi.delete(selectedProduct.productId);
+      toast.success(`Product "${selectedProduct?.productName}" has been deleted`);
+      setDeleteProductModal(false);
+      refetchProducts();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to delete product';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Product selection handler for Plan creation
   const handleProductSelect = (productId: string) => {
     setSelectedProductId(productId);
-    const product = products.find((p) => p.id === productId);
+    const product = products.find((p) => p.productId === productId);
     if (product) {
-      setPlanAmount(product.amount.toString());
-      setPlanDescription(product.description);
+      setPlanDescription(product.productDescription || '');
+      if (product.productAmount != null) {
+        setPlanAmount(String(product.productAmount));
+      }
     }
   };
 
@@ -415,11 +735,11 @@ export function TenantDashboard() {
 
   const handleEditPlan = (plan: any) => {
     setSelectedPlan(plan);
-    setPlanName(plan.name);
-    setPlanDescription(plan.description);
-    setPlanAmount(plan.amount.toString());
-    setPlanFrequency(plan.frequency);
-    setPlanTrialPeriod(plan.trialPeriod.toString());
+    setPlanName(plan.planName || '');
+    setPlanDescription(plan.planDescription || '');
+    setPlanAmount(plan.planAmount || '');
+    setPlanFrequency(plan.planBillingInterval || 'MONTHLY');
+    setPlanTrialPeriod((plan.planTrialDays ?? '').toString());
     setEditPlanModal(true);
   };
 
@@ -428,19 +748,70 @@ export function TenantDashboard() {
     setDeletePlanModal(true);
   };
 
-  const confirmCreatePlan = () => {
-    toast.success(`Plan "${planName}" has been created`);
-    setCreatePlanModal(false);
+  const confirmCreatePlan = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const intervalMap: Record<string, 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'> = {
+        'Daily': 'DAILY',
+        'Weekly': 'WEEKLY',
+        'Monthly': 'MONTHLY',
+        'Quarterly': 'QUARTERLY',
+        'Yearly': 'YEARLY',
+      };
+      await plansApi.create({
+        planName,
+        planDescription: planDescription || undefined,
+        planAmount: planAmount,
+        planBillingInterval: intervalMap[planFrequency] || 'MONTHLY',
+        planTrialDays: planTrialPeriod ? parseInt(planTrialPeriod) : undefined,
+        planProductId: selectedProductId || undefined,
+      });
+      toast.success(`Plan "${planName}" has been created`);
+      setCreatePlanModal(false);
+      refetchPlans();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to create plan';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const confirmEditPlan = () => {
-    toast.success(`Plan "${planName}" has been updated`);
-    setEditPlanModal(false);
+  const confirmEditPlan = async () => {
+    if (isSubmitting || !selectedPlan?.planId) return;
+    setIsSubmitting(true);
+    try {
+      await plansApi.update(selectedPlan.planId, {
+        planName,
+        planDescription: planDescription || undefined,
+        planAmount: planAmount,
+      });
+      toast.success(`Plan "${planName}" has been updated`);
+      setEditPlanModal(false);
+      refetchPlans();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to update plan';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const confirmDeletePlan = () => {
-    toast.success(`Plan "${selectedPlan?.name}" has been deleted`);
-    setDeletePlanModal(false);
+  const confirmDeletePlan = async () => {
+    if (isSubmitting || !selectedPlan?.planId) return;
+    setIsSubmitting(true);
+    try {
+      await plansApi.delete(selectedPlan.planId);
+      toast.success(`Plan "${selectedPlan?.planName}" has been deleted`);
+      setDeletePlanModal(false);
+      refetchPlans();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to delete plan';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Customer handlers
@@ -458,9 +829,9 @@ export function TenantDashboard() {
 
   const handleEditCustomer = (customer: any) => {
     setSelectedCustomer(customer);
-    setCustomerName(customer.name);
-    setCustomerEmail(customer.email);
-    setCustomerPhone(customer.phone || '');
+    setCustomerName(`${customer.customerFirstName || ''} ${customer.customerLastName || ''}`);
+    setCustomerEmail(customer.customerEmail || '');
+    setCustomerPhone(customer.customerPhone || '');
     setEditCustomerModal(true);
   };
 
@@ -469,29 +840,37 @@ export function TenantDashboard() {
     setDeleteCustomerModal(true);
   };
 
-  const handleCustomerAccountNumberChange = (value: string) => {
+  const handleCustomerAccountNumberChange = async (value: string) => {
     const cleaned = value.replace(/\D/g, '');
     if (cleaned.length <= 10) {
       setCustomerAccountNumber(cleaned);
 
-      // Simulate account name lookup when 10 digits entered
-      if (cleaned.length === 10 && customerBankName) {
+      // Call real name enquiry API when 10 digits entered
+      if (cleaned.length === 10 && customerBankCode) {
         setIsLookingUpAccount(true);
-        setTimeout(() => {
-          // Simulate getting account name from bank
-          const accountName = 'ADEBAYO JOHNSON OLUSEGUN';
-          setCustomerAccountName(accountName);
+        try {
+          const result = await billingApi.verifyBankAccount({
+            bankCode: customerBankCode,
+            accountNumber: cleaned,
+          });
+          setCustomerAccountName(result.accountName || '');
 
-          // Auto-populate first and last name
-          const nameParts = accountName.split(' ');
-          if (nameParts.length >= 1) {
-            setCustomerName(nameParts[0]); // First name
-          }
+          // Auto-populate first and last name from verified account name
+          // Nigerian bank names come as: LASTNAME FIRSTNAME MIDDLENAME
+          const nameParts = (result.accountName || '').split(' ').filter(Boolean);
           if (nameParts.length >= 2) {
-            setCustomerLastName(nameParts.slice(1).join(' ')); // Last name(s)
+            setCustomerLastName(nameParts[0]); // First part is surname
+            setCustomerName(nameParts.slice(1).join(' ')); // Rest is first + middle name
+          } else if (nameParts.length === 1) {
+            setCustomerName(nameParts[0]);
           }
+        } catch (error) {
+          console.error('Account verification failed:', error);
+          toast.error('Failed to verify account. Please check the details.');
+          setCustomerAccountName('');
+        } finally {
           setIsLookingUpAccount(false);
-        }, 1500);
+        }
       } else {
         setCustomerAccountName('');
       }
@@ -504,15 +883,19 @@ export function TenantDashboard() {
     setCustomerEmail('');
     setCustomerPhone('');
     setLinkBankAccount(false);
+    setCustomerBankCode('');
     setCustomerBankName('');
     setCustomerAccountNumber('');
     setCustomerAccountName('');
     setIsLookingUpAccount(false);
     setCustomerProductId('');
     setCustomerPlanId('');
+    setApplyCouponCode('');
+    setCouponValidation(null);
   };
 
-  const confirmAddCustomer = () => {
+  const confirmAddCustomer = async () => {
+    if (isSubmitting) return;
     // First validate basic required customer info
     if (!customerName.trim()) {
       toast.error('Please enter customer name');
@@ -529,71 +912,157 @@ export function TenantDashboard() {
       return;
     }
 
-    if (linkBankAccount) {
-      // Validate bank account fields
-      if (!customerBankName || !customerAccountNumber || !customerAccountName) {
-        toast.error('Please complete all bank account fields');
-        return;
-      }
-      if (customerAccountNumber.length !== 10) {
-        toast.error('Account number must be 10 digits');
-        return;
-      }
-      // Validate plan selection when linking bank account
-      if (!customerPlanId) {
-        toast.error('Please select a subscription plan');
-        return;
-      }
+    setIsSubmitting(true);
 
-      // Get the selected plan details
-      const selectedPlan = subscriptionPlans.find(p => p.id === customerPlanId);
-      const selectedProduct = products.find(p => p.id === customerProductId);
+    // Capture form values before resetting (for verification modal + background API calls)
+    const formEmail = customerEmail.trim();
+    const formPhone = customerPhone;
+    const formBankCode = customerBankCode;
+    const formAccountNumber = customerAccountNumber;
+    const formAccountName = customerAccountName;
+    const formPlanId = customerPlanId;
+    const formCouponCode = couponValidation?.valid ? applyCouponCode.trim() : undefined;
+    const formDiscountedAmount = couponValidation?.valid ? couponValidation.finalAmount : null;
+    const formLinkBank = linkBankAccount;
+    const formName = customerName.trim();
+    const nameParts = formName.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || customerLastName || firstName;
+    const fullName = `${firstName} ${lastName}`.trim();
+    const selectedPlan = formPlanId ? businessPlans.find(p => p.planId === formPlanId) : null;
 
-      // Create new mandate for this customer with actual plan details
-      const fullName = customerLastName ? `${customerName} ${customerLastName}` : customerName;
-      const newMandate = {
-        id: `MND${Date.now()}`,
-        customerId: `CUST${Date.now()}`,
-        customerName: fullName || customerAccountName,
-        customerEmail: customerEmail,
-        customerPhone: customerPhone,
-        bankName: customerBankName,
-        accountNumber: customerAccountNumber,
-        status: 'Biller Initiated',
-        amount: selectedPlan?.amount || 0,
-        frequency: selectedPlan?.frequency || 'Monthly',
-        planId: customerPlanId,
-        planName: selectedPlan?.name,
-        productName: selectedProduct?.name,
-        createdDate: new Date().toISOString().split('T')[0],
-      };
-
-      // Set this mandate for verification modal
-      setSelectedMandate(newMandate);
-
-      // Close add customer modal and reset form
-      setAddCustomerModal(false);
-      resetAddCustomerForm();
-
-      // Show success message and open verification modal
-      toast.success('Customer added with bank account. Share verification details below.');
+    // If bank is linked, show the ₦50 verification modal IMMEDIATELY
+    if (formLinkBank && formBankCode && formAccountNumber && formPlanId) {
+      // Build mandate-like object from form data for the verification modal
+      setSelectedMandate({
+        mandateAccountNumber: formAccountNumber,
+        mandateAccountName: formAccountName,
+        mandateBankId: formBankCode,
+        mandatePayerName: formAccountName || fullName,
+        mandatePayerEmail: formEmail,
+        mandatePayerPhone: formPhone,
+        mandateAmount: formDiscountedAmount != null ? formDiscountedAmount.toString() : (selectedPlan?.planAmount || '0'),
+        mandateFrequency: selectedPlan?.planBillingInterval || 'MONTHLY',
+      });
       setCopiedToClipboard(false);
-      setVerificationModal(true);
-    } else {
-      toast.success(`Customer "${customerName}" has been added`);
       setAddCustomerModal(false);
       resetAddCustomerForm();
+      setVerificationModal(true);
+    }
+
+    // Create customer, subscription, and mandate sequentially in the background
+    try {
+      // Step 1: Create customer
+      const newCustomer = await customersApi.create({
+        customerEmail: formEmail,
+        customerFirstName: firstName,
+        customerLastName: lastName,
+        customerPhone: formPhone || undefined,
+        customerBankCode: formLinkBank ? formBankCode || undefined : undefined,
+        customerAccountNumber: formLinkBank ? formAccountNumber || undefined : undefined,
+        customerAccountName: formLinkBank ? formAccountName || undefined : undefined,
+        createUserAccount: true,
+      });
+
+      if (formLinkBank && formPlanId && formBankCode && formAccountNumber) {
+        // Step 2: Create subscription (need subscription ID for mandate)
+        const newSubscription = await subscriptionsApi.create({
+          subscriptionCustomerId: newCustomer.customerId,
+          subscriptionPlanId: formPlanId,
+          subscriptionCouponCode: formCouponCode,
+        });
+
+        // Step 3: Create mandate with subscription ID and correct bank UUID
+        const bankEntry = banksList.find(b => b.bankCode === formBankCode);
+        const bankUuid = bankEntry?.bankId;
+        const mandateAmount = formDiscountedAmount != null ? formDiscountedAmount.toString() : (selectedPlan?.planAmount || '0');
+
+        if (bankUuid) {
+          try {
+            const mandate = await billingApi.createMandate({
+              mandateSubscriptionId: newSubscription.subscriptionId,
+              mandateAccountNumber: formAccountNumber,
+              mandateAccountName: formAccountName || undefined,
+              mandateBankId: bankUuid,
+              mandatePayerName: formAccountName || fullName,
+              mandatePayerEmail: formEmail,
+              mandatePayerPhone: formPhone || undefined,
+              mandateAmount: mandateAmount,
+              mandateFrequency: selectedPlan?.planBillingInterval || 'MONTHLY',
+              mandateProductId: selectedPlan?.planProductId || undefined,
+              mandateNarration: `Direct debit for ${selectedPlan?.planName || 'subscription'}`,
+            });
+            // Update verification modal with real mandate data
+            setSelectedMandate(mandate);
+            refetchMandates();
+          } catch {
+            toast.error('Failed to create mandate. Customer and subscription were created.');
+          }
+        } else {
+          toast.error('Bank not found. Customer and subscription were created, but mandate was not.');
+        }
+      } else if (formPlanId) {
+        // No bank linked, just create subscription
+        await subscriptionsApi.create({
+          subscriptionCustomerId: newCustomer.customerId,
+          subscriptionPlanId: formPlanId,
+          subscriptionCouponCode: formCouponCode,
+        });
+      }
+
+      toast.success(`Customer "${formName}" created! Login credentials sent via email.`);
+
+      if (!formLinkBank || !formBankCode || !formAccountNumber || !formPlanId) {
+        // Only close modal here if we didn't already close it for verification
+        setAddCustomerModal(false);
+        resetAddCustomerForm();
+      }
+      refetchCustomers();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to add customer';
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const confirmEditCustomer = () => {
-    toast.success(`Customer "${customerName}" has been updated`);
-    setEditCustomerModal(false);
+  const confirmEditCustomer = async () => {
+    if (isSubmitting || !selectedCustomer?.customerId) return;
+    setIsSubmitting(true);
+    try {
+      const nameParts = customerName.trim().split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ') || firstName;
+
+      await customersApi.update(selectedCustomer.customerId, {
+        customerEmail: customerEmail,
+        customerFirstName: firstName,
+        customerLastName: lastName,
+        customerPhone: customerPhone || undefined,
+      });
+      toast.success(`Customer "${customerName}" has been updated`);
+      setEditCustomerModal(false);
+      refetchCustomers();
+    } catch (error) {
+      toast.error('Failed to update customer');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const confirmDeleteCustomer = () => {
-    toast.success(`Customer "${selectedCustomer?.name}" has been deleted`);
-    setDeleteCustomerModal(false);
+  const confirmDeleteCustomer = async () => {
+    if (isSubmitting || !selectedCustomer?.customerId) return;
+    setIsSubmitting(true);
+    try {
+      await customersApi.delete(selectedCustomer.customerId);
+      toast.success(`Customer "${selectedCustomer?.customerFirstName} ${selectedCustomer?.customerLastName}" has been deleted`);
+      setDeleteCustomerModal(false);
+      refetchCustomers();
+    } catch (error) {
+      toast.error('Failed to delete customer');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Subscription handlers
@@ -608,8 +1077,20 @@ export function TenantDashboard() {
     setCancelSubscriptionModal(true);
   };
 
-  const confirmCancelSubscription = () => {
-    toast.success(`Subscription has been cancelled`);
+  const confirmCancelSubscription = async () => {
+    if (isSubmitting || !selectedSubscription?.subscriptionId) return;
+    setIsSubmitting(true);
+    try {
+      await subscriptionsApi.cancel(selectedSubscription.subscriptionId, {
+        subscriptionCancellationReason: cancellationReason || undefined,
+      });
+      toast.success(`Subscription has been cancelled`);
+      refetchSubscriptions();
+    } catch (error) {
+      toast.error('Failed to cancel subscription');
+    } finally {
+      setIsSubmitting(false);
+    }
     setCancelSubscriptionModal(false);
   };
 
@@ -624,9 +1105,16 @@ export function TenantDashboard() {
     setCancelMandateModal(true);
   };
 
-  const confirmCancelMandate = () => {
-    toast.success(`Mandate has been cancelled`);
-    setCancelMandateModal(false);
+  const confirmCancelMandate = async () => {
+    if (!selectedMandate?.mandateId) return;
+    try {
+      await billingApi.updateMandate(selectedMandate.mandateId, { mandateStatus: 'CANCELLED' });
+      toast.success('Mandate has been cancelled');
+      setCancelMandateModal(false);
+      refetchMandates();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to cancel mandate');
+    }
   };
 
   // Verification handlers
@@ -637,8 +1125,8 @@ export function TenantDashboard() {
   };
 
   const handleSendVerificationForCustomer = (customer: any) => {
-    // Find the mandate for this customer
-    const customerMandate = mandates.find(m => m.customerId === customer.id);
+    // Find the mandate for this customer (mandates don't have direct customerId - this is placeholder)
+    const customerMandate = businessMandates.find((m: any) => m.mandatePayerEmail === customer.customerEmail);
     if (customerMandate) {
       setSelectedMandate(customerMandate);
       setCopiedToClipboard(false);
@@ -648,40 +1136,60 @@ export function TenantDashboard() {
     }
   };
 
-  const getVerificationText = () => {
-    if (!selectedMandate) return '';
+  // Helper to resolve bank code to bank name
+  const getBankName = (bankCodeOrId: string | null | undefined): string => {
+    if (!bankCodeOrId) return 'Unknown Bank';
+    const bank = banksList.find(b => b.bankCode === bankCodeOrId || b.bankId === bankCodeOrId);
+    return bank?.bankName || bankCodeOrId;
+  };
 
-    return `MANDATE VERIFICATION INSTRUCTIONS
+  const getVerificationText = () => {
+    if (!selectedMandate || !business) return '';
+
+    const customerBankName = getBankName(selectedMandate.mandateBankId);
+    const businessBankNameResolved = getBankName(business.businessBankCode);
+    const businessAccountNumber = business.businessAccountNumber || 'Not configured';
+    const businessAccountName = business.businessAccountName || business.businessName;
+    const mandateAcctLast4 = (selectedMandate.mandateAccountNumber || '').slice(-4);
+
+    return `MANDATE ACTIVATION INSTRUCTIONS
 ====================================
 
-Dear ${selectedMandate.customerName},
+Dear ${selectedMandate.mandatePayerName},
 
-To verify your bank account for direct debit, please make a transfer of exactly NGN 50.00 to the account below:
+To activate your direct debit mandate with ${business.businessName}, please transfer exactly NGN 50.00 from your linked bank account to the account below:
 
 YOUR BANK ACCOUNT (Source)
 --------------------------
-Bank: ${selectedMandate.bankName}
-Account: ***${selectedMandate.accountNumber.slice(-4)}
+Bank: ${customerBankName}
+Account: ***${mandateAcctLast4}
 
-RECCUR VERIFICATION ACCOUNT (Destination)
+DESTINATION ACCOUNT (Transfer NGN 50.00 here)
 -----------------------------------------
-Bank: Sterling Bank
-Account Number: 0123456789
-Account Name: Reccur Technologies Ltd
+Bank: ${businessBankNameResolved}
+Account Number: ${businessAccountNumber}
+Account Name: ${businessAccountName}
 Amount: NGN 50.00
 
-IMPORTANT INSTRUCTIONS:
-1. Transfer exactly NGN 50.00 from your linked bank account
-2. Use your registered account ending in ${selectedMandate.accountNumber.slice(-4)}
-3. The transfer must come from the same account linked to your mandate
-4. Verification is usually completed within 24 hours
+MANDATE DETAILS
+--------------------------
+Recurring Amount: NGN ${selectedMandate.mandateAmount || '0.00'}
+Billing Cycle: ${selectedMandate.mandateFrequency || 'MONTHLY'}
+Biller: ${business.businessName}
 
-This one-time verification confirms that you own the bank account and authorizes future direct debits.
+IMPORTANT INSTRUCTIONS:
+1. Transfer exactly NGN 50.00 to the destination account above
+2. Use your registered account ending in ${mandateAcctLast4}
+3. The transfer must come from the same bank account linked to your mandate
+4. Once the NGN 50.00 is confirmed, your mandate will be activated
+5. After activation, recurring debits will begin based on your subscription plan
+
+This one-time payment confirms your authorization for ${business.businessName} to debit your account via NIBSS Direct Debit (NDD).
 
 Thank you for your cooperation.
 
 Best regards,
-DSTV Nigeria`;
+${business.businessName}`;
   };
 
   const handleCopyToClipboard = async () => {
@@ -696,15 +1204,15 @@ DSTV Nigeria`;
   };
 
   const handleSendEmail = () => {
-    if (!selectedMandate?.customerEmail) {
+    if (!selectedMandate?.mandatePayerEmail) {
       toast.error('No email address available for this customer');
       return;
     }
 
     const subject = encodeURIComponent('Direct Debit Verification - Transfer ₦50.00');
     const body = encodeURIComponent(getVerificationText());
-    window.open(`mailto:${selectedMandate.customerEmail}?subject=${subject}&body=${body}`, '_blank');
-    toast.success(`Opening email client for ${selectedMandate.customerEmail}`);
+    window.open(`mailto:${selectedMandate.mandatePayerEmail}?subject=${subject}&body=${body}`, '_blank');
+    toast.success(`Opening email client for ${selectedMandate.mandatePayerEmail}`);
   };
 
   const handlePrint = () => {
@@ -712,13 +1220,13 @@ DSTV Nigeria`;
   };
 
   const handleShareWhatsApp = () => {
-    if (!selectedMandate?.customerPhone) {
+    if (!selectedMandate?.mandatePayerPhone) {
       toast.error('No phone number available for this customer');
       return;
     }
 
     // Clean the phone number - remove spaces, dashes, and ensure it has country code
-    let phoneNumber = selectedMandate.customerPhone.replace(/[\s-()]/g, '');
+    let phoneNumber = selectedMandate.mandatePayerPhone.replace(/[\s-()]/g, '');
 
     // If number starts with 0, replace with Nigeria country code
     if (phoneNumber.startsWith('0')) {
@@ -735,7 +1243,7 @@ DSTV Nigeria`;
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
 
     window.open(whatsappUrl, '_blank');
-    toast.success(`Opening WhatsApp for ${selectedMandate.customerPhone}`);
+    toast.success(`Opening WhatsApp for ${selectedMandate.mandatePayerPhone}`);
   };
 
   // Coupon handlers
@@ -750,11 +1258,11 @@ DSTV Nigeria`;
 
   const handleEditCoupon = (coupon: any) => {
     setSelectedCoupon(coupon);
-    setCouponCode(coupon.code);
-    setCouponType(coupon.type);
-    setCouponValue(coupon.value.toString());
-    setCouponLimit(coupon.usageLimit.toString());
-    setCouponValidTo(coupon.validTo);
+    setCouponCode(coupon.couponCode || '');
+    setCouponType(coupon.couponType || 'Percentage');
+    setCouponValue(coupon.couponValue || '');
+    setCouponLimit((coupon.couponMaxRedemptions || '').toString());
+    setCouponValidTo(coupon.couponValidUntil ? coupon.couponValidUntil.split('T')[0] : '');
     setEditCouponModal(true);
   };
 
@@ -763,19 +1271,54 @@ DSTV Nigeria`;
     setDeleteCouponModal(true);
   };
 
-  const confirmCreateCoupon = () => {
-    toast.success(`Coupon "${couponCode}" has been created`);
-    setCreateCouponModal(false);
+  const confirmCreateCoupon = async () => {
+    try {
+      await couponsApi.create({
+        couponCode: couponCode,
+        couponName: couponCode,
+        couponType: couponType,
+        couponValue: couponValue,
+        couponMaxRedemptions: parseInt(couponLimit) || 100,
+        couponValidUntil: couponValidTo ? `${couponValidTo}T23:59:59` : undefined,
+        couponStatus: 'ACTIVE',
+      });
+      toast.success(`Coupon "${couponCode}" has been created`);
+      setCreateCouponModal(false);
+      refetchCoupons();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to create coupon');
+    }
   };
 
-  const confirmEditCoupon = () => {
-    toast.success(`Coupon "${couponCode}" has been updated`);
-    setEditCouponModal(false);
+  const confirmEditCoupon = async () => {
+    if (!selectedCoupon?.couponId) return;
+    try {
+      await couponsApi.update(selectedCoupon.couponId, {
+        couponCode: couponCode,
+        couponName: couponCode,
+        couponType: couponType,
+        couponValue: couponValue,
+        couponMaxRedemptions: parseInt(couponLimit) || undefined,
+        couponValidUntil: couponValidTo ? `${couponValidTo}T23:59:59` : undefined,
+      });
+      toast.success(`Coupon "${couponCode}" has been updated`);
+      setEditCouponModal(false);
+      refetchCoupons();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to update coupon');
+    }
   };
 
-  const confirmDeleteCoupon = () => {
-    toast.success(`Coupon "${selectedCoupon?.code}" has been deleted`);
-    setDeleteCouponModal(false);
+  const confirmDeleteCoupon = async () => {
+    if (!selectedCoupon?.couponId) return;
+    try {
+      await couponsApi.delete(selectedCoupon.couponId);
+      toast.success(`Coupon "${selectedCoupon?.couponCode}" has been deleted`);
+      setDeleteCouponModal(false);
+      refetchCoupons();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to delete coupon');
+    }
   };
 
   // Team member handlers
@@ -834,22 +1377,53 @@ DSTV Nigeria`;
     setTestWebhookModal(true);
   };
 
-  const confirmAddWebhook = () => {
-    toast.success('Webhook has been added');
-    setAddWebhookModal(false);
+  const confirmAddWebhook = async () => {
+    if (!webhookUrl) {
+      toast.error('Please enter a webhook URL');
+      return;
+    }
+    try {
+      await webhooksApi.create({
+        webhookUrl,
+        webhookEvents: [webhookEvent],
+        webhookIsActive: true,
+      });
+      toast.success('Webhook has been added');
+      await refetchWebhooks();
+      setAddWebhookModal(false);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to add webhook');
+    }
   };
 
-  const confirmTestWebhook = () => {
-    toast.success('Test event sent successfully');
-    setTestWebhookModal(false);
+  const confirmTestWebhook = async () => {
+    if (!selectedWebhook) return;
+    try {
+      await webhooksApi.test(selectedWebhook.webhookId);
+      toast.success('Test event sent successfully');
+      setTestWebhookModal(false);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to send test event');
+    }
   };
 
-  const handleLogout = () => {
+  const handleDeleteWebhook = async (webhookId: string) => {
+    try {
+      await webhooksApi.delete(webhookId);
+      toast.success('Webhook deleted successfully');
+      await refetchWebhooks();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to delete webhook');
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout(); // Clear tokens from AuthContext
     toast.success('Logged out successfully');
     window.location.href = '/';
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
       toast.error('Passwords do not match');
       return;
@@ -858,11 +1432,16 @@ DSTV Nigeria`;
       toast.error('Password must be at least 8 characters');
       return;
     }
-    toast.success('Password changed successfully');
-    setChangePasswordModal(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    try {
+      await authApi.changePassword(currentPassword, newPassword);
+      toast.success('Password changed successfully');
+      setChangePasswordModal(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to change password');
+    }
   };
 
   // Overview Section Component
@@ -872,7 +1451,7 @@ DSTV Nigeria`;
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-foreground">Overview</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Dashboard for <span className="font-medium text-foreground">DSTV Nigeria</span>
+          Dashboard for <span className="font-medium text-foreground">{business?.businessName}</span>
         </p>
       </div>
 
@@ -911,9 +1490,8 @@ DSTV Nigeria`;
                 <p className="text-3xl font-bold font-mono tracking-tight text-foreground">
                   ₦{monthlyRevenue.toLocaleString()}
                 </p>
-                <p className="text-sm text-emerald-600 mt-1 flex items-center gap-1">
-                  <TrendingUpIcon className="h-3 w-3" />
-                  +15.3% from last month
+                <p className="text-sm text-muted-foreground mt-1">
+                  Based on active subscriptions
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-gray-100 text-gray-600 flex-shrink-0">
@@ -1060,15 +1638,15 @@ DSTV Nigeria`;
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {tenantSubscriptions.slice(0, 5).map((sub) => (
-                <div key={sub.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
+              {businessSubscriptions.slice(0, 5).map((sub) => (
+                <div key={sub.subscriptionId} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-foreground">{sub.customerName}</div>
-                    <div className="text-sm text-muted-foreground">{sub.planName}</div>
+                    <div className="font-medium text-foreground">{getCustomerName(sub.subscriptionCustomerId)}</div>
+                    <div className="text-sm text-muted-foreground">{getPlanName(sub.subscriptionPlanId)}</div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-4">
-                    <div className="font-medium font-mono text-foreground">₦{sub.amount.toLocaleString()}</div>
-                    <StatusBadge status={sub.status} type="subscription" />
+                    <div className="font-medium font-mono text-foreground">₦{getPlanAmount(sub.subscriptionPlanId).toLocaleString()}</div>
+                    <StatusBadge status={sub.subscriptionStatus || 'UNKNOWN'} type="subscription" />
                   </div>
                 </div>
               ))}
@@ -1082,15 +1660,15 @@ DSTV Nigeria`;
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {tenantTransactions.slice(0, 5).map((txn) => (
-                <div key={txn.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
+              {businessTransactions.slice(0, 5).map((txn: any) => (
+                <div key={txn.transactionId} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-foreground">{txn.customerName}</div>
-                    <div className="text-sm text-muted-foreground font-mono">{txn.reference}</div>
+                    <div className="font-medium text-foreground">{txn.transactionDescription || 'Transaction'}</div>
+                    <div className="text-sm text-muted-foreground font-mono">{txn.transactionReference}</div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-4">
-                    <div className="font-medium font-mono text-foreground">₦{txn.amount.toLocaleString()}</div>
-                    <StatusBadge status={txn.status} type="payment" />
+                    <div className="font-medium font-mono text-foreground">₦{parseFloat(txn.transactionAmount || '0').toLocaleString()}</div>
+                    <StatusBadge status={txn.transactionStatus || 'UNKNOWN'} type="payment" />
                   </div>
                 </div>
               ))}
@@ -1110,10 +1688,15 @@ DSTV Nigeria`;
           <h2 className="text-2xl font-bold text-foreground">Products</h2>
           <p className="text-sm text-muted-foreground mt-1">Manage your product catalog</p>
         </div>
-        <Button onClick={handleCreateProduct} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Add Product
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => { refetchProducts(); toast.info('Refreshing products...'); }}>
+            <RefreshIcon className="h-4 w-4" />
+          </Button>
+          <Button onClick={handleCreateProduct} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Add Product
+          </Button>
+        </div>
       </div>
       <Card className="">
         <CardHeader>
@@ -1134,7 +1717,7 @@ DSTV Nigeria`;
                 <tr className="border-b border-border">
                   <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Product Name</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount (₦)</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Created</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -1142,21 +1725,21 @@ DSTV Nigeria`;
               </thead>
               <tbody>
                 {paginatedProducts.map((product) => (
-                  <tr key={product.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                  <tr key={product.productId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
                     <td className="py-4 px-4">
-                      <div className="font-medium text-foreground">{product.name}</div>
+                      <div className="font-medium text-foreground">{product.productName}</div>
                     </td>
                     <td className="py-4 px-4">
-                      <div className="text-sm text-muted-foreground max-w-xs truncate">{product.description}</div>
+                      <div className="text-sm text-muted-foreground max-w-xs truncate">{product.productDescription}</div>
                     </td>
                     <td className="py-4 px-4 text-right">
-                      <div className="font-medium font-mono text-foreground">₦{product.amount.toLocaleString()}</div>
+                      <div className="text-sm font-medium text-foreground">{product.productAmount != null ? `₦${Number(product.productAmount).toLocaleString()}` : '-'}</div>
                     </td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={product.status} type="general" />
+                      <StatusBadge status={product.productStatus || 'ACTIVE'} type="general" />
                     </td>
                     <td className="py-4 px-4">
-                      <div className="text-sm text-muted-foreground">{product.createdDate}</div>
+                      <div className="text-sm text-muted-foreground">{product.productCreatedAt ? new Date(product.productCreatedAt).toLocaleDateString() : '-'}</div>
                     </td>
                     <td className="py-4 px-4 text-right">
                       <DropdownMenu>
@@ -1204,19 +1787,24 @@ DSTV Nigeria`;
           <h2 className="text-2xl font-bold text-foreground">Subscription Plans</h2>
           <p className="text-sm text-muted-foreground mt-1">Configure pricing and billing options</p>
         </div>
-        <Button onClick={handleCreatePlan} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Create Plan
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => refetchPlans()} disabled={plansLoading}>
+            <RefreshIcon className={`h-4 w-4 ${plansLoading ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button onClick={handleCreatePlan} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Create Plan
+          </Button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {subscriptionPlans.filter(plan => plan.tenantId === CURRENT_TENANT_ID).map((plan) => (
-          <Card key={plan.id} className="">
+        {businessPlans.map((plan) => (
+          <Card key={plan.planId} className="">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <CardTitle className="text-lg text-foreground">{plan.name}</CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
+                  <CardTitle className="text-lg text-foreground">{plan.planName}</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">{plan.planDescription}</p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1239,21 +1827,21 @@ DSTV Nigeria`;
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold font-mono text-foreground mb-4">
-                ₦{plan.amount.toLocaleString()}
-                <span className="text-sm font-normal text-muted-foreground">/{plan.frequency.toLowerCase()}</span>
+                ₦{parseFloat(plan.planAmount || '0').toLocaleString()}
+                <span className="text-sm font-normal text-muted-foreground">/{(plan.planBillingInterval || 'MONTHLY').toLowerCase()}</span>
               </div>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
                   <span className="text-muted-foreground">Subscribers</span>
-                  <span className="font-medium text-foreground">{plan.subscribers}</span>
+                  <span className="font-medium text-foreground">{businessSubscriptions.filter(s => s.subscriptionPlanId === plan.planId && (s.subscriptionStatus === 'ACTIVE' || s.subscriptionStatus === 'TRIALING')).length}</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
                   <span className="text-muted-foreground">Trial Period</span>
-                  <span className="font-medium text-foreground">{plan.trialPeriod} days</span>
+                  <span className="font-medium text-foreground">{plan.planTrialDays ?? 0} days</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
                   <span className="text-muted-foreground">Status</span>
-                  <StatusBadge status={plan.status} type="general" />
+                  <StatusBadge status={plan.planStatus || 'UNKNOWN'} type="general" />
                 </div>
               </div>
             </CardContent>
@@ -1282,6 +1870,9 @@ DSTV Nigeria`;
               className="pl-10 w-64"
             />
           </div>
+          <Button variant="outline" onClick={() => refetchCustomers()} disabled={customersLoading}>
+            <RefreshIcon className={`h-4 w-4 ${customersLoading ? 'animate-spin' : ''}`} />
+          </Button>
           <Button onClick={handleAddCustomer} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
             <UserPlusIcon className="h-4 w-4 mr-2" />
             Add Customer
@@ -1304,14 +1895,14 @@ DSTV Nigeria`;
               </thead>
               <tbody>
                 {paginatedCustomers.map((customer) => (
-                  <tr key={customer.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
-                    <td className="py-4 px-4 font-medium text-foreground">{customer.name}</td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground">{customer.email}</td>
+                  <tr key={customer.customerId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                    <td className="py-4 px-4 font-medium text-foreground">{customer.customerFirstName} {customer.customerLastName}</td>
+                    <td className="py-4 px-4 text-sm text-muted-foreground">{customer.customerEmail}</td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={customer.status} type="general" />
+                      <StatusBadge status={customer.customerStatus || 'ACTIVE'} type="general" />
                     </td>
-                    <td className="py-4 px-4 text-sm text-foreground text-right">{customer.subscriptions}</td>
-                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{customer.totalPaid.toLocaleString()}</td>
+                    <td className="py-4 px-4 text-sm text-foreground text-right">{getSubscriptionCount(customer.customerId)}</td>
+                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦0</td>
                     <td className="py-3 px-4 text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -1331,6 +1922,18 @@ DSTV Nigeria`;
                           <DropdownMenuItem onClick={() => handleSendVerificationForCustomer(customer)}>
                             <ShareIcon className="h-4 w-4 mr-2" />
                             Send Verification
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={async () => {
+                            try {
+                              const result = await customersApi.resendWelcomeEmail(customer.customerId);
+                              toast.success(result.message || 'Welcome email resent successfully');
+                            } catch (err: any) {
+                              const msg = err?.response?.data?.message || err?.message || 'Failed to resend email';
+                              toast.error(msg);
+                            }
+                          }}>
+                            <MailIcon className="h-4 w-4 mr-2" />
+                            Resend Welcome Email
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-red-600" onClick={() => handleDeleteCustomer(customer)}>
                             <TrashIcon className="h-4 w-4 mr-2" />
@@ -1361,9 +1964,14 @@ DSTV Nigeria`;
   const SubscriptionsSection = () => (
     <div className="space-y-6">
       {/* Section Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">All Subscriptions</h2>
-        <p className="text-sm text-muted-foreground mt-1">Track and manage active subscriptions</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">All Subscriptions</h2>
+          <p className="text-sm text-muted-foreground mt-1">Track and manage active subscriptions</p>
+        </div>
+        <Button variant="outline" onClick={() => refetchSubscriptions()} disabled={subscriptionsLoading}>
+          <RefreshIcon className={`h-4 w-4 ${subscriptionsLoading ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
       <Card className="">
         <CardContent className="pt-6">
@@ -1382,18 +1990,18 @@ DSTV Nigeria`;
               </thead>
               <tbody>
                 {paginatedSubscriptions.map((sub) => (
-                  <tr key={sub.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
-                    <td className="py-4 px-4 font-medium text-foreground">{sub.customerName}</td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground">{sub.planName}</td>
+                  <tr key={sub.subscriptionId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                    <td className="py-4 px-4 font-medium text-foreground">{getCustomerName(sub.subscriptionCustomerId)}</td>
+                    <td className="py-4 px-4 text-sm text-muted-foreground">{getPlanName(sub.subscriptionPlanId)}</td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={sub.status} type="subscription" />
+                      <StatusBadge status={sub.subscriptionStatus || 'UNKNOWN'} type="subscription" />
                     </td>
-                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{sub.amount.toLocaleString()}</td>
+                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{getPlanAmount(sub.subscriptionPlanId).toLocaleString()}</td>
                     <td className="py-4 px-4 text-sm text-muted-foreground">
-                      {new Date(sub.nextBillingDate).toLocaleDateString()}
+                      {sub.subscriptionCurrentPeriodEnd ? new Date(sub.subscriptionCurrentPeriodEnd).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={sub.mandateStatus} type="mandate" />
+                      <StatusBadge status="N/A" type="mandate" />
                     </td>
                     <td className="py-3 px-4 text-right">
                       <DropdownMenu>
@@ -1407,7 +2015,7 @@ DSTV Nigeria`;
                             <EyeIcon className="h-4 w-4 mr-2" />
                             View Details
                           </DropdownMenuItem>
-                          {sub.status === 'Active' && (
+                          {(sub.subscriptionStatus === 'ACTIVE' || sub.subscriptionStatus === 'TRIALING') && (
                             <DropdownMenuItem className="text-red-600" onClick={() => handleCancelSubscription(sub)}>
                               <BanIcon className="h-4 w-4 mr-2" />
                               Cancel Subscription
@@ -1425,7 +2033,7 @@ DSTV Nigeria`;
             currentPage={subscriptionsPage}
             totalPages={subscriptionsTotalPages}
             pageSize={subscriptionsPageSize}
-            totalItems={subscriptions.length}
+            totalItems={filteredSubscriptions.length}
             onPageChange={setSubscriptionsPage}
             onPageSizeChange={setSubscriptionsPageSize}
           />
@@ -1435,15 +2043,16 @@ DSTV Nigeria`;
   );
 
   // Mandates Section Component
-  const [isRefreshingMandates, setIsRefreshingMandates] = useState(false);
-
-  const handleRefreshMandates = () => {
+  const handleRefreshMandates = async () => {
     setIsRefreshingMandates(true);
-    // Simulate API call to refresh mandate statuses from NIBSS
-    setTimeout(() => {
-      setIsRefreshingMandates(false);
+    try {
+      await refetchMandates();
       toast.success('Mandate statuses refreshed');
-    }, 1500);
+    } catch (err) {
+      toast.error('Failed to refresh mandates');
+    } finally {
+      setIsRefreshingMandates(false);
+    }
   };
 
   const MandatesSection = () => (
@@ -1481,18 +2090,18 @@ DSTV Nigeria`;
                 </tr>
               </thead>
               <tbody>
-                {paginatedMandates.map((mandate) => (
-                  <tr key={mandate.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
-                    <td className="py-4 px-4 font-medium text-foreground">{mandate.customerName}</td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground">{mandate.bankName}</td>
-                    <td className="py-4 px-4 text-sm font-mono text-muted-foreground">***{mandate.accountNumber.slice(-4)}</td>
+                {paginatedMandates.map((mandate: any) => (
+                  <tr key={mandate.mandateId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                    <td className="py-4 px-4 font-medium text-foreground">{mandate.mandatePayerName}</td>
+                    <td className="py-4 px-4 text-sm text-muted-foreground">{getBankName(mandate.mandateBankId)}</td>
+                    <td className="py-4 px-4 text-sm font-mono text-muted-foreground">***{(mandate.mandateAccountNumber || '').slice(-4)}</td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={mandate.status} type="mandate" />
+                      <StatusBadge status={mandate.mandateStatus || 'UNKNOWN'} type="mandate" />
                     </td>
-                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{mandate.amount.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground">{mandate.frequency}</td>
+                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{parseFloat(mandate.mandateAmount || '0').toLocaleString()}</td>
+                    <td className="py-4 px-4 text-sm text-muted-foreground">{mandate.mandateFrequency}</td>
                     <td className="py-4 px-4 text-sm text-muted-foreground">
-                      {new Date(mandate.createdDate).toLocaleDateString()}
+                      {mandate.mandateCreatedAt ? new Date(mandate.mandateCreatedAt).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <DropdownMenu>
@@ -1510,7 +2119,7 @@ DSTV Nigeria`;
                             <ShareIcon className="h-4 w-4 mr-2" />
                             Send Verification
                           </DropdownMenuItem>
-                          {mandate.status === 'Active' && (
+                          {mandate.mandateStatus === 'ACTIVE' && (
                             <DropdownMenuItem className="text-red-600" onClick={() => handleCancelMandate(mandate)}>
                               <BanIcon className="h-4 w-4 mr-2" />
                               Cancel Mandate
@@ -1528,7 +2137,7 @@ DSTV Nigeria`;
             currentPage={mandatesPage}
             totalPages={mandatesTotalPages}
             pageSize={mandatesPageSize}
-            totalItems={mandates.length}
+            totalItems={filteredMandates.length}
             onPageChange={setMandatesPage}
             onPageSizeChange={setMandatesPageSize}
           />
@@ -1541,9 +2150,14 @@ DSTV Nigeria`;
   const TransactionsSection = () => (
     <div className="space-y-6">
       {/* Section Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">Transaction History</h2>
-        <p className="text-sm text-muted-foreground mt-1">View all payment transactions</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Transaction History</h2>
+          <p className="text-sm text-muted-foreground mt-1">View all payment transactions</p>
+        </div>
+        <Button variant="outline" onClick={() => toast.info('Refreshing transactions...')}>
+          <RefreshIcon className="h-4 w-4" />
+        </Button>
       </div>
       <Card className="">
         <CardContent className="pt-6">
@@ -1560,17 +2174,17 @@ DSTV Nigeria`;
                 </tr>
               </thead>
               <tbody>
-                {paginatedTransactions.map((txn) => (
-                  <tr key={txn.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
-                    <td className="py-4 px-4 font-mono text-sm text-foreground">{txn.reference}</td>
-                    <td className="py-4 px-4 text-sm text-foreground">{txn.customerName}</td>
-                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{txn.amount.toLocaleString()}</td>
+                {paginatedTransactions.map((txn: any) => (
+                  <tr key={txn.transactionId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                    <td className="py-4 px-4 font-mono text-sm text-foreground">{txn.transactionReference}</td>
+                    <td className="py-4 px-4 text-sm text-foreground">{txn.transactionDescription || 'N/A'}</td>
+                    <td className="py-4 px-4 text-sm font-mono text-foreground text-right">₦{parseFloat(txn.transactionAmount || '0').toLocaleString()}</td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={txn.status} type="payment" />
+                      <StatusBadge status={txn.transactionStatus || 'UNKNOWN'} type="payment" />
                     </td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground text-right">{txn.retryCount}</td>
+                    <td className="py-4 px-4 text-sm text-muted-foreground text-right">0</td>
                     <td className="py-4 px-4 text-sm text-muted-foreground">
-                      {new Date(txn.date).toLocaleDateString()}
+                      {txn.transactionCreatedAt ? new Date(txn.transactionCreatedAt).toLocaleDateString() : 'N/A'}
                     </td>
                   </tr>
                 ))}
@@ -1581,7 +2195,7 @@ DSTV Nigeria`;
             currentPage={transactionsPage}
             totalPages={transactionsTotalPages}
             pageSize={transactionsPageSize}
-            totalItems={transactions.length}
+            totalItems={filteredTransactions.length}
             onPageChange={setTransactionsPage}
             onPageSizeChange={setTransactionsPageSize}
           />
@@ -1599,10 +2213,15 @@ DSTV Nigeria`;
           <h2 className="text-2xl font-bold text-foreground">Discount Coupons</h2>
           <p className="text-sm text-muted-foreground mt-1">Create and manage promotional codes</p>
         </div>
-        <Button onClick={handleCreateCoupon} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Create Coupon
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => { refetchCoupons(); toast.info('Refreshing coupons...'); }}>
+            <RefreshIcon className="h-4 w-4" />
+          </Button>
+          <Button onClick={handleCreateCoupon} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Create Coupon
+          </Button>
+        </div>
       </div>
       <Card className="">
         <CardHeader>
@@ -1631,27 +2250,27 @@ DSTV Nigeria`;
               </thead>
               <tbody>
                 {paginatedCoupons.map((coupon) => (
-                  <tr key={coupon.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                  <tr key={coupon.couponId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
                     <td className="py-4 px-4">
-                      <div className="font-mono font-medium text-foreground">{coupon.code}</div>
+                      <div className="font-mono font-medium text-foreground">{coupon.couponCode}</div>
                     </td>
                     <td className="py-4 px-4 text-right">
                       <div className="text-sm font-mono text-foreground">
-                        {coupon.type === 'Percentage' ? `${coupon.value}%` : `₦${coupon.value.toLocaleString()}`}
+                        {coupon.couponType === 'Percentage' ? `${coupon.couponValue}%` : `₦${Number(coupon.couponValue || 0).toLocaleString()}`}
                       </div>
                     </td>
                     <td className="py-4 px-4 text-right">
                       <div className="text-sm text-foreground">
-                        {coupon.usageCount}/{coupon.usageLimit}
+                        {coupon.couponRedemptionCount || 0}/{coupon.couponMaxRedemptions || 0}
                       </div>
                     </td>
                     <td className="py-4 px-4">
                       <div className="text-sm text-muted-foreground">
-                        {new Date(coupon.validTo).toLocaleDateString()}
+                        {coupon.couponValidUntil ? new Date(coupon.couponValidUntil).toLocaleDateString() : '—'}
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <StatusBadge status={coupon.status} type="general" />
+                      <StatusBadge status={coupon.couponStatus || 'ACTIVE'} type="general" />
                     </td>
                     <td className="py-4 px-4 text-right">
                       <DropdownMenu>
@@ -1699,10 +2318,15 @@ DSTV Nigeria`;
           <h2 className="text-2xl font-bold text-foreground">Webhooks</h2>
           <p className="text-sm text-muted-foreground mt-1">Configure API keys and webhook endpoints</p>
         </div>
-        <Button onClick={handleAddWebhook} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Add Webhook
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => { refetchWebhooks(); toast.info('Refreshing webhooks...'); }}>
+            <RefreshIcon className="h-4 w-4" />
+          </Button>
+          <Button onClick={handleAddWebhook} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Add Webhook
+          </Button>
+        </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="">
@@ -1714,13 +2338,13 @@ DSTV Nigeria`;
               <div className="p-4 bg-muted/30 rounded-xl border border-border/50">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Public Key</div>
                 <div className="font-mono text-sm text-foreground break-all">
-                  pk_test_1234567890abcdefghijklmnopqr
+                  pk_{business?.businessSlug || 'test'}_••••••••••••
                 </div>
               </div>
               <div className="p-4 bg-muted/30 rounded-xl border border-border/50">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Secret Key</div>
                 <div className="font-mono text-sm text-muted-foreground">
-                  sk_test_••••••••••••••••••••••••••••
+                  sk_{business?.businessSlug || 'test'}_••••••••••••
                 </div>
               </div>
               <Button variant="outline" className="w-full transition-colors duration-200" onClick={handleRegenerateKeys}>
@@ -1736,13 +2360,47 @@ DSTV Nigeria`;
             <CardTitle className="text-foreground">Webhook Endpoints</CardTitle>
           </CardHeader>
           <CardContent>
-            <EmptyState
-              icon={WebhookIcon}
-              title="No webhooks configured"
-              description="Set up webhook endpoints to receive real-time notifications"
-              actionLabel="Add Webhook"
-              onAction={handleAddWebhook}
-            />
+            {isLoadingWebhooks ? (
+              <div className="text-center py-8 text-muted-foreground">Loading webhooks...</div>
+            ) : businessWebhooks.length === 0 ? (
+              <EmptyState
+                icon={WebhookIcon}
+                title="No webhooks configured"
+                description="Set up webhook endpoints to receive real-time notifications"
+                actionLabel="Add Webhook"
+                onAction={handleAddWebhook}
+              />
+            ) : (
+              <div className="space-y-3">
+                {businessWebhooks.map((webhook) => (
+                  <div key={webhook.webhookId} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-sm text-foreground truncate">{webhook.webhookUrl}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Events: {webhook.webhookEvents.join(', ')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <StatusBadge status={webhook.webhookIsActive ? 'active' : 'inactive'} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestWebhook(webhook)}
+                      >
+                        Test
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteWebhook(webhook.webhookId)}
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1849,29 +2507,143 @@ DSTV Nigeria`;
         </CardContent>
       </Card>
 
-      {/* Settlements - Full Width Grid */}
-      <Card className="">
+      {/* Settlement Bank Account */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-foreground">Settlement Bank Account</CardTitle>
+          <p className="text-sm text-muted-foreground">Set your bank account for receiving NDD settlement payouts</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Bank</Label>
+              <Popover open={settBankOpen} onOpenChange={setSettBankOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" aria-expanded={settBankOpen} className="w-full justify-between font-normal">
+                    {settBankCode ? settBanksList.find(b => b.bankCode === settBankCode)?.bankName || 'Select bank' : 'Select bank'}
+                    <SearchIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search bank..." />
+                    <CommandList>
+                      <CommandEmpty>No bank found.</CommandEmpty>
+                      <CommandGroup>
+                        {settBanksList.map((bank) => (
+                          <CommandItem
+                            key={bank.bankCode}
+                            value={bank.bankName}
+                            onSelect={() => {
+                              setSettBankCode(bank.bankCode);
+                              setSettBankName(bank.bankName);
+                              setSettAccountName('');
+                              setSettBankOpen(false);
+                            }}
+                          >
+                            <CheckIcon className={`mr-2 h-4 w-4 ${settBankCode === bank.bankCode ? 'opacity-100' : 'opacity-0'}`} />
+                            {bank.bankName}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Account Number</Label>
+              <Input
+                placeholder="0123456789"
+                value={settAccountNumber}
+                maxLength={10}
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/\D/g, '');
+                  setSettAccountNumber(cleaned);
+                  if (cleaned.length === 10 && settBankCode) {
+                    setIsLookingUpSettAccount(true);
+                    setSettAccountName('');
+                    billingApi.verifyBankAccount({ bankCode: settBankCode, accountNumber: cleaned })
+                      .then((res) => setSettAccountName(res.accountName || ''))
+                      .catch(() => toast.error('Account lookup failed'))
+                      .finally(() => setIsLookingUpSettAccount(false));
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Account Name</Label>
+              <Input
+                value={isLookingUpSettAccount ? 'Looking up...' : settAccountName}
+                disabled
+                className="bg-muted/50"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <Button
+                disabled={!settBankCode || !settAccountNumber || !settAccountName || isSavingBankAccount}
+                className="bg-primary hover:bg-primary/90"
+                onClick={async () => {
+                  if (!business?.businessId) return;
+                  setIsSavingBankAccount(true);
+                  try {
+                    await businessesApi.update(business.businessId, {
+                      businessBankCode: settBankCode,
+                      businessAccountName: settAccountName,
+                      businessAccountNumber: settAccountNumber,
+                    });
+                    refreshBusiness();
+                    toast.success('Bank account saved');
+                  } catch (error: any) {
+                    const msg = error?.response?.data?.message || 'Failed to save bank account';
+                    toast.error(msg);
+                  } finally {
+                    setIsSavingBankAccount(false);
+                  }
+                }}
+              >
+                {isSavingBankAccount ? 'Saving...' : 'Save Bank Account'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Settlements History */}
+      <Card>
         <CardHeader>
           <CardTitle className="text-foreground">Settlements</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {settlements.map((settlement) => (
-              <div key={settlement.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold font-mono text-foreground">₦{settlement.amount.toLocaleString()}</div>
-                  <div className="text-sm text-muted-foreground font-mono">{settlement.reference}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{settlement.bankAccount}</div>
-                </div>
-                <div className="text-right flex-shrink-0 ml-4">
-                  <StatusBadge status={settlement.status} type="general" />
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {new Date(settlement.date).toLocaleDateString()}
+          {isLoadingSettlements ? (
+            <p className="text-sm text-muted-foreground">Loading settlements...</p>
+          ) : settlements.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No settlements yet. Settlements will appear here once payouts are processed.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {settlements.map((s) => (
+                <div key={s.settlementId} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors duration-200">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold font-mono text-foreground">
+                      {s.settlementCurrency || '₦'}{parseFloat(s.settlementNetAmount || s.settlementAmount || '0').toLocaleString()}
+                    </div>
+                    <div className="text-sm text-muted-foreground font-mono">{s.settlementReference}</div>
+                    {s.settlementBankAccountNumber && (
+                      <div className="text-xs text-muted-foreground mt-1">****{s.settlementBankAccountNumber.slice(-4)}</div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-4">
+                    <StatusBadge status={s.settlementStatus || 'PENDING'} type="general" />
+                    {s.settlementPaidAt && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {new Date(s.settlementPaidAt).toLocaleDateString()}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -1898,7 +2670,7 @@ DSTV Nigeria`;
       case 'webhooks':
         return <WebhooksSection />;
       case 'settings':
-        return <SettingsSection />;
+        return SettingsSection();
       default:
         return <OverviewSection />;
     }
@@ -1908,18 +2680,18 @@ DSTV Nigeria`;
     <div className="min-h-screen bg-background">
       <PortalHeader
         title="Business Dashboard"
-        subtitle="DSTV Nigeria"
+        subtitle={business?.businessName || 'Loading...'}
         userMenu={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200">
-                <span className="text-sm font-medium text-foreground">Adewale Balogun</span>
+                <span className="text-sm font-medium text-foreground">{user?.firstName} {user?.lastName}</span>
                 <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold shadow-sm cursor-pointer">
-                  AB
+                  {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
                 </div>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" sideOffset={8} className="w-56 z-[9999]">
               <DropdownMenuItem onClick={() => setChangePasswordModal(true)}>
                 <KeyIcon className="w-4 h-4 mr-2" />
                 Change Password
@@ -1945,7 +2717,7 @@ DSTV Nigeria`;
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveSection(item.id)}
+                    onClick={() => handleSectionChange(item.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer ${
                       isActive
                         ? 'bg-purple-600 text-white'
@@ -1997,8 +2769,8 @@ DSTV Nigeria`;
                 </SelectTrigger>
                 <SelectContent>
                   {products.map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      {product.name} - ₦{product.amount.toLocaleString()}
+                    <SelectItem key={product.productId} value={product.productId}>
+                      {product.productName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2036,7 +2808,11 @@ DSTV Nigeria`;
                   value={planAmount}
                   onChange={(e) => setPlanAmount(e.target.value)}
                   className="mt-1"
+                  disabled={!!(selectedProductId && products.find(p => p.productId === selectedProductId)?.productAmount)}
                 />
+                {selectedProductId && products.find(p => p.productId === selectedProductId)?.productAmount && (
+                  <p className="text-xs text-gray-500 mt-1">Amount set by product</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="plan-frequency">Billing Frequency</Label>
@@ -2049,7 +2825,7 @@ DSTV Nigeria`;
                     <SelectItem value="Weekly">Weekly</SelectItem>
                     <SelectItem value="Monthly">Monthly</SelectItem>
                     <SelectItem value="Quarterly">Quarterly</SelectItem>
-                    <SelectItem value="Annually">Annually</SelectItem>
+                    <SelectItem value="Yearly">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2068,7 +2844,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreatePlanModal(false)}>Cancel</Button>
-            <Button onClick={confirmCreatePlan} className="bg-green-600 hover:bg-green-700">Create Plan</Button>
+            <Button onClick={confirmCreatePlan} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Plan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2078,7 +2854,7 @@ DSTV Nigeria`;
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Plan</DialogTitle>
-            <DialogDescription>Update plan details for {selectedPlan?.name}</DialogDescription>
+            <DialogDescription>Update plan details for {selectedPlan?.planName}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -2125,7 +2901,7 @@ DSTV Nigeria`;
                     <SelectItem value="Weekly">Weekly</SelectItem>
                     <SelectItem value="Monthly">Monthly</SelectItem>
                     <SelectItem value="Quarterly">Quarterly</SelectItem>
-                    <SelectItem value="Annually">Annually</SelectItem>
+                    <SelectItem value="Yearly">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2144,7 +2920,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPlanModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditPlan} className="bg-green-600 hover:bg-green-700">Update Plan</Button>
+            <Button onClick={confirmEditPlan} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Plan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2155,12 +2931,12 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Delete Plan</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedPlan?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedPlan?.planName}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletePlanModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDeletePlan}>Delete Plan</Button>
+            <Button variant="destructive" onClick={confirmDeletePlan} disabled={isSubmitting}>{isSubmitting ? 'Deleting...' : 'Delete Plan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2259,39 +3035,42 @@ DSTV Nigeria`;
                 </p>
                 <div>
                   <Label htmlFor="customer-bank" className="text-sm font-medium">Bank Name</Label>
-                  <Select value={customerBankName} onValueChange={(value) => {
-                    setCustomerBankName(value);
-                    // Reset account lookup when bank changes
-                    if (customerAccountNumber.length === 10) {
-                      setIsLookingUpAccount(true);
-                      setTimeout(() => {
-                        // Simulate getting account name from bank
-                        const accountName = 'ADEBAYO JOHNSON OLUSEGUN';
-                        setCustomerAccountName(accountName);
-
-                        // Auto-populate first and last name
-                        const nameParts = accountName.split(' ');
-                        if (nameParts.length >= 1) {
-                          setCustomerName(nameParts[0]); // First name
-                        }
-                        if (nameParts.length >= 2) {
-                          setCustomerLastName(nameParts.slice(1).join(' ')); // Last name(s)
-                        }
-                        setIsLookingUpAccount(false);
-                      }, 1500);
-                    }
-                  }}>
-                    <SelectTrigger id="customer-bank" className="mt-1.5 h-11">
-                      <SelectValue placeholder="Select bank" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nigerianBanks.map((bank) => (
-                        <SelectItem key={bank} value={bank}>
-                          {bank}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={custBankOpen} onOpenChange={setCustBankOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" aria-expanded={custBankOpen} className="w-full justify-between font-normal mt-1.5 h-11">
+                        {customerBankCode ? banksList.find(b => b.bankCode === customerBankCode)?.bankName || 'Select bank' : (isLoadingBanks ? 'Loading banks...' : 'Select bank')}
+                        <SearchIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0 z-[9999]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search bank..." />
+                        <CommandList>
+                          <CommandEmpty>No bank found.</CommandEmpty>
+                          <CommandGroup>
+                            {banksList.map((bank) => (
+                              <CommandItem
+                                key={bank.bankCode}
+                                value={bank.bankName}
+                                onSelect={() => {
+                                  setCustomerBankCode(bank.bankCode);
+                                  setCustomerBankName(bank.bankName);
+                                  setCustomerAccountName('');
+                                  if (customerAccountNumber.length === 10) {
+                                    handleCustomerAccountNumberChange(customerAccountNumber);
+                                  }
+                                  setCustBankOpen(false);
+                                }}
+                              >
+                                <CheckIcon className={`mr-2 h-4 w-4 ${customerBankCode === bank.bankCode ? 'opacity-100' : 'opacity-0'}`} />
+                                {bank.bankName}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div>
                   <Label htmlFor="customer-account-number" className="text-sm font-medium">Account Number</Label>
@@ -2300,7 +3079,7 @@ DSTV Nigeria`;
                     placeholder="Enter 10-digit account number"
                     value={customerAccountNumber}
                     onChange={(e) => handleCustomerAccountNumberChange(e.target.value)}
-                    disabled={!customerBankName}
+                    disabled={!customerBankCode}
                     className="mt-1.5 h-11 font-mono"
                   />
                   {isLookingUpAccount && (
@@ -2327,20 +3106,20 @@ DSTV Nigeria`;
                   <Select value={customerPlanId} onValueChange={(val) => {
                     setCustomerPlanId(val);
                     // Auto-set product ID from plan
-                    const plan = subscriptionPlans.find(p => p.id === val);
-                    if (plan) setCustomerProductId(plan.productId || '');
+                    const plan = businessPlans.find(p => p.planId === val);
+                    if (plan) setCustomerProductId(plan.planProductId || '');
                   }}>
                     <SelectTrigger className="mt-1.5 h-11">
                       <SelectValue placeholder="Select a subscription plan" />
                     </SelectTrigger>
                     <SelectContent>
-                      {subscriptionPlans.filter(p => p.status === 'Active').map(plan => {
-                        const product = products.find(pr => pr.id === plan.productId);
+                      {businessPlans.filter(p => p.planStatus === 'ACTIVE').map(plan => {
+                        const product = products.find(pr => pr.productId === plan.planProductId);
                         return (
-                          <SelectItem key={plan.id} value={plan.id}>
-                            <span className="font-medium">{plan.name}</span>
+                          <SelectItem key={plan.planId} value={plan.planId}>
+                            <span className="font-medium">{plan.planName}</span>
                             <span className="text-muted-foreground ml-2">
-                              {product?.name && `(${product.name}) `}- ₦{plan.amount.toLocaleString()}/{plan.frequency.toLowerCase()}
+                              {product?.productName && `(${product.productName}) `}- ₦{parseFloat(plan.planAmount || '0').toLocaleString()}/{(plan.planBillingInterval || 'MONTHLY').toLowerCase()}
                             </span>
                           </SelectItem>
                         );
@@ -2350,8 +3129,8 @@ DSTV Nigeria`;
                 </div>
 
                 {customerPlanId && (() => {
-                  const selectedPlan = subscriptionPlans.find(p => p.id === customerPlanId);
-                  const selectedProduct = products.find(pr => pr.id === selectedPlan?.productId);
+                  const selectedPlan = businessPlans.find(p => p.planId === customerPlanId);
+                  const selectedProduct = products.find(pr => pr.productId === selectedPlan?.planProductId);
                   return (
                     <div className="p-5 rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 shadow-sm">
                       <div className="flex items-center gap-2 mb-3">
@@ -2359,23 +3138,94 @@ DSTV Nigeria`;
                           <CheckIcon className="h-4 w-4 text-green-600" />
                         </div>
                         <div>
-                          <p className="font-semibold text-green-900">{selectedPlan?.name}</p>
-                          <p className="text-xs text-green-700">{selectedProduct?.name}</p>
+                          <p className="font-semibold text-green-900">{selectedPlan?.planName}</p>
+                          <p className="text-xs text-green-700">{selectedProduct?.productName}</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-green-200">
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Amount</p>
-                          <p className="text-xl font-bold font-mono text-green-900">₦{selectedPlan?.amount.toLocaleString()}</p>
+                          <p className="text-xl font-bold font-mono text-green-900">₦{parseFloat(selectedPlan?.planAmount || '0').toLocaleString()}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Billing Cycle</p>
-                          <p className="text-lg font-semibold text-green-900">{selectedPlan?.frequency}</p>
+                          <p className="text-lg font-semibold text-green-900">{selectedPlan?.planBillingInterval || 'MONTHLY'}</p>
                         </div>
                       </div>
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* Coupon Code */}
+            {customerPlanId && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Coupon Code (Optional)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter coupon code"
+                    value={applyCouponCode}
+                    onChange={(e) => {
+                      setApplyCouponCode(e.target.value.toUpperCase());
+                      if (couponValidation) setCouponValidation(null);
+                    }}
+                    className="flex-1 font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!applyCouponCode.trim() || isValidatingCoupon}
+                    onClick={async () => {
+                      setIsValidatingCoupon(true);
+                      try {
+                        const selectedPlan = businessPlans.find(p => p.planId === customerPlanId);
+                        const amount = parseFloat(selectedPlan?.planAmount || '0');
+                        const result = await couponsApi.validate({ couponCode: applyCouponCode.trim(), amount });
+                        setCouponValidation(result);
+                      } catch {
+                        setCouponValidation({ valid: false, discountAmount: 0, finalAmount: 0, message: 'Failed to validate coupon' });
+                      } finally {
+                        setIsValidatingCoupon(false);
+                      }
+                    }}
+                  >
+                    {isValidatingCoupon ? 'Checking...' : 'Apply'}
+                  </Button>
+                  {couponValidation && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="px-2"
+                      onClick={() => { setApplyCouponCode(''); setCouponValidation(null); }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                {couponValidation && (
+                  couponValidation.valid ? (
+                    <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                      <div className="flex items-center gap-2 text-green-700 text-sm font-medium mb-1">
+                        <CheckIcon className="h-4 w-4" />
+                        {couponValidation.message}
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Discount:</span>
+                        <span className="font-mono font-semibold text-green-700">-₦{couponValidation.discountAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-muted-foreground">Final Amount:</span>
+                        <span className="font-mono font-bold text-green-900">₦{couponValidation.finalAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                      <p className="text-sm text-red-700">{couponValidation.message}</p>
+                    </div>
+                  )
+                )}
               </div>
             )}
 
@@ -2397,8 +3247,8 @@ DSTV Nigeria`;
             }}>
               Cancel
             </Button>
-            <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmAddCustomer}>
-              {linkBankAccount ? 'Add & Continue' : 'Send Invite'}
+            <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmAddCustomer} disabled={isSubmitting}>
+              {isSubmitting ? 'Processing...' : linkBankAccount ? 'Add & Continue' : 'Send Invite'}
             </Button>
           </div>
         </SheetContent>
@@ -2409,36 +3259,36 @@ DSTV Nigeria`;
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Customer Details</DialogTitle>
-            <DialogDescription>Complete information about {selectedCustomer?.name}</DialogDescription>
+            <DialogDescription>Complete information about {selectedCustomer?.customerFirstName} {selectedCustomer?.customerLastName}</DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Name</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.name}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.customerFirstName} {selectedCustomer.customerLastName}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Email</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.email}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.customerEmail}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Status</Label>
                   <div className="mt-1">
-                    <StatusBadge status={selectedCustomer.status} type="general" />
+                    <StatusBadge status={selectedCustomer.customerStatus || 'ACTIVE'} type="general" />
                   </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Active Subscriptions</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.subscriptions}</p>
+                  <p className="text-sm text-gray-900 mt-1">{getSubscriptionCount(selectedCustomer.customerId)}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-600">Total Paid</Label>
-                  <p className="text-sm text-gray-900 mt-1">₦{selectedCustomer.totalPaid.toLocaleString()}</p>
+                  <Label className="text-sm font-medium text-gray-600">Phone</Label>
+                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.customerPhone || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Customer Since</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.joinedDate || 'N/A'}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedCustomer.customerCreatedAt ? new Date(selectedCustomer.customerCreatedAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -2491,7 +3341,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditCustomerModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditCustomer} className="bg-green-600 hover:bg-green-700">Update Customer</Button>
+            <Button onClick={confirmEditCustomer} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Customer'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2502,12 +3352,12 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Delete Customer</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedCustomer?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedCustomer?.customerFirstName} {selectedCustomer?.customerLastName}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteCustomerModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDeleteCustomer}>Delete Customer</Button>
+            <Button variant="destructive" onClick={confirmDeleteCustomer} disabled={isSubmitting}>{isSubmitting ? 'Deleting...' : 'Delete Customer'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2524,31 +3374,29 @@ DSTV Nigeria`;
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Customer</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedSubscription.customerName}</p>
+                  <p className="text-sm text-gray-900 mt-1">{getCustomerName(selectedSubscription.subscriptionCustomerId)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Plan</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedSubscription.planName}</p>
+                  <p className="text-sm text-gray-900 mt-1">{getPlanName(selectedSubscription.subscriptionPlanId)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Status</Label>
                   <div className="mt-1">
-                    <StatusBadge status={selectedSubscription.status} type="subscription" />
+                    <StatusBadge status={selectedSubscription.subscriptionStatus || 'UNKNOWN'} type="subscription" />
                   </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Amount</Label>
-                  <p className="text-sm text-gray-900 mt-1">₦{selectedSubscription.amount.toLocaleString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">₦{getPlanAmount(selectedSubscription.subscriptionPlanId).toLocaleString()}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Next Billing Date</Label>
-                  <p className="text-sm text-gray-900 mt-1">{new Date(selectedSubscription.nextBillingDate).toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedSubscription.subscriptionCurrentPeriodEnd ? new Date(selectedSubscription.subscriptionCurrentPeriodEnd).toLocaleDateString() : 'N/A'}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-600">Mandate Status</Label>
-                  <div className="mt-1">
-                    <StatusBadge status={selectedSubscription.mandateStatus} type="mandate" />
-                  </div>
+                  <Label className="text-sm font-medium text-gray-600">Start Date</Label>
+                  <p className="text-sm text-gray-900 mt-1">{selectedSubscription.subscriptionStartDate ? new Date(selectedSubscription.subscriptionStartDate).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -2565,7 +3413,7 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Cancel Subscription</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel this subscription for {selectedSubscription?.customerName}?
+              Are you sure you want to cancel this subscription for {getCustomerName(selectedSubscription?.subscriptionCustomerId || null)}?
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2583,7 +3431,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelSubscriptionModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmCancelSubscription}>Cancel Subscription</Button>
+            <Button variant="destructive" onClick={confirmCancelSubscription} disabled={isSubmitting}>{isSubmitting ? 'Cancelling...' : 'Cancel Subscription'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2600,33 +3448,33 @@ DSTV Nigeria`;
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Customer</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.customerName}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.mandatePayerName}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Bank</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.bankName}</p>
+                  <p className="text-sm text-gray-900 mt-1">{getBankName(selectedMandate.mandateBankId)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Account Number</Label>
-                  <p className="text-sm text-gray-900 mt-1">***{selectedMandate.accountNumber.slice(-4)}</p>
+                  <p className="text-sm text-gray-900 mt-1">***{(selectedMandate.mandateAccountNumber || '').slice(-4)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Status</Label>
                   <div className="mt-1">
-                    <StatusBadge status={selectedMandate.status} type="mandate" />
+                    <StatusBadge status={selectedMandate.mandateStatus || 'UNKNOWN'} type="mandate" />
                   </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Amount</Label>
-                  <p className="text-sm text-gray-900 mt-1">₦{selectedMandate.amount.toLocaleString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">₦{parseFloat(selectedMandate.mandateAmount || '0').toLocaleString()}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Frequency</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.frequency}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.mandateFrequency}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Created Date</Label>
-                  <p className="text-sm text-gray-900 mt-1">{new Date(selectedMandate.createdDate).toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">{selectedMandate.mandateCreatedAt ? new Date(selectedMandate.mandateCreatedAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -2643,7 +3491,7 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Cancel Mandate</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel this direct debit mandate for {selectedMandate?.customerName}?
+              Are you sure you want to cancel this direct debit mandate for {selectedMandate?.mandatePayerName}?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -2811,7 +3659,7 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Delete Coupon</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete the coupon "{selectedCoupon?.code}"? This action cannot be undone.
+              Are you sure you want to delete the coupon "{selectedCoupon?.couponCode}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -2867,7 +3715,7 @@ DSTV Nigeria`;
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Team Member Role</DialogTitle>
-            <DialogDescription>Update the role for {selectedTeamMember?.name}</DialogDescription>
+            <DialogDescription>Update the role for {selectedTeamMember?.name || 'team member'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -2898,7 +3746,7 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Remove Team Member</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedTeamMember?.name} from your team?
+              Are you sure you want to remove {selectedTeamMember?.name || 'this member'} from your team?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -3037,7 +3885,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateProductModal(false)}>Cancel</Button>
-            <Button onClick={confirmCreateProduct} className="bg-green-600 hover:bg-green-700">Create Product</Button>
+            <Button onClick={confirmCreateProduct} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Product'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3085,7 +3933,7 @@ DSTV Nigeria`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditProductModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditProduct} className="bg-green-600 hover:bg-green-700">Update Product</Button>
+            <Button onClick={confirmEditProduct} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Product'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3096,12 +3944,12 @@ DSTV Nigeria`;
           <DialogHeader>
             <DialogTitle>Delete Product</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedProduct?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedProduct?.productName}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteProductModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDeleteProduct}>Delete</Button>
+            <Button variant="destructive" onClick={confirmDeleteProduct} disabled={isSubmitting}>{isSubmitting ? 'Deleting...' : 'Delete'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3176,70 +4024,76 @@ DSTV Nigeria`;
                 {/* Customer Account - Clean card */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                    Source Account
+                    Customer's Linked Bank Account
                   </p>
                   <div className="p-5 rounded-xl border bg-card/50">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Bank</p>
-                        <p className="text-lg font-semibold">{selectedMandate.bankName}</p>
+                        <p className="text-lg font-semibold">{getBankName(selectedMandate.mandateBankId)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Account</p>
-                        <p className="text-lg font-mono">{selectedMandate.accountNumber}</p>
+                        <p className="text-lg font-mono">{selectedMandate.mandateAccountNumber}</p>
                       </div>
                     </div>
                     <div className="mt-4 pt-4 border-t">
                       <p className="text-xs text-muted-foreground mb-1">Account Holder</p>
-                      <p className="text-lg font-semibold">{selectedMandate.customerName}</p>
+                      <p className="text-lg font-semibold">{selectedMandate.mandatePayerName}</p>
                     </div>
-                    {selectedMandate.customerEmail && (
+                    {selectedMandate.mandatePayerEmail && (
                       <div className="mt-3 pt-3 border-t">
                         <p className="text-xs text-muted-foreground mb-1">Customer Email</p>
-                        <p className="text-sm font-medium text-primary">{selectedMandate.customerEmail}</p>
+                        <p className="text-sm font-medium text-primary">{selectedMandate.mandatePayerEmail}</p>
                       </div>
                     )}
-                    {selectedMandate.customerPhone && (
+                    {selectedMandate.mandatePayerPhone && (
                       <div className="mt-3 pt-3 border-t">
                         <p className="text-xs text-muted-foreground mb-1">Customer Phone</p>
-                        <p className="text-sm font-medium text-[#25D366]">{selectedMandate.customerPhone}</p>
+                        <p className="text-sm font-medium text-[#25D366]">{selectedMandate.mandatePayerPhone}</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Arrow indicator - simple */}
+                {/* Arrow indicator */}
                 <div className="flex justify-center">
                   <svg className="h-8 w-8 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                   </svg>
                 </div>
 
-                {/* Destination Account - Clean card with accent */}
+                {/* Destination Account */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                    Destination Account
+                    Destination Account (Transfer ₦50 here)
                   </p>
                   <div className="p-5 rounded-xl border-2 border-green-200 bg-green-50/30">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Bank</p>
-                        <p className="text-lg font-semibold">Sterling Bank</p>
+                        <p className="text-lg font-semibold">{getBankName(business?.businessBankCode)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">Account</p>
-                        <p className="text-lg font-mono">0123456789</p>
+                        <p className="text-xs text-muted-foreground mb-1">Account Number</p>
+                        <p className="text-lg font-mono">{business?.businessAccountNumber || 'Not configured'}</p>
                       </div>
                     </div>
                     <div className="mt-4 pt-4 border-t border-green-200">
                       <p className="text-xs text-muted-foreground mb-1">Account Name</p>
-                      <p className="text-lg font-semibold">Reccur Technologies Ltd</p>
+                      <p className="text-lg font-semibold">{business?.businessAccountName || business?.businessName}</p>
                     </div>
                   </div>
+                  {!business?.businessAccountNumber && (
+                    <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                      Please configure your bank details in Settings to receive the ₦50 activation fee
+                    </p>
+                  )}
                 </div>
 
                 {/* Subscription Plan Details - Only show if plan was selected */}
-                {selectedMandate.planName && (
+                {selectedMandate.mandateProductId && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                       Subscription Details
@@ -3247,23 +4101,23 @@ DSTV Nigeria`;
                     <div className="p-5 rounded-xl border bg-blue-50/30 border-blue-200/50">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <p className="text-xs text-muted-foreground mb-1">Product</p>
-                          <p className="text-lg font-semibold">{selectedMandate.productName}</p>
+                          <p className="text-xs text-muted-foreground mb-1">Mandate Code</p>
+                          <p className="text-lg font-semibold">{selectedMandate.mandateCode || 'N/A'}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground mb-1">Plan</p>
-                          <p className="text-lg font-semibold">{selectedMandate.planName}</p>
+                          <p className="text-xs text-muted-foreground mb-1">Narration</p>
+                          <p className="text-lg font-semibold">{selectedMandate.mandateNarration || 'N/A'}</p>
                         </div>
                       </div>
                       <div className="mt-4 pt-4 border-t border-blue-200/50">
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="text-xs text-muted-foreground mb-1">Recurring Amount</p>
-                            <p className="text-2xl font-bold">₦{selectedMandate.amount?.toLocaleString()}</p>
+                            <p className="text-2xl font-bold">₦{parseFloat(selectedMandate.mandateAmount || '0').toLocaleString()}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground mb-1">Billing Cycle</p>
-                            <p className="text-lg font-medium">{selectedMandate.frequency}</p>
+                            <p className="text-lg font-medium">{selectedMandate.mandateFrequency}</p>
                           </div>
                         </div>
                       </div>
@@ -3285,17 +4139,17 @@ DSTV Nigeria`;
                   <ul className="space-y-2 text-sm text-muted-foreground">
                     <li className="flex items-start gap-2">
                       <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">1</span>
-                      Transfer exactly ₦50.00 from the source account above
+                      Transfer exactly ₦50.00 from the linked account to the destination account above
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">2</span>
-                      We'll automatically verify the payment via NIBSS
+                      Once the ₦50 is confirmed, your mandate will be activated via NIBSS NDD
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">3</span>
-                      {selectedMandate.planName
-                        ? `Once verified, ${selectedMandate.frequency?.toLowerCase()} debits of ₦${selectedMandate.amount?.toLocaleString()} will begin for ${selectedMandate.planName}`
-                        : 'Once verified, the mandate will be activated for direct debit payments'}
+                      {selectedMandate.mandateFrequency
+                        ? `After activation, ${selectedMandate.mandateFrequency.toLowerCase()} debits of ₦${parseFloat(selectedMandate.mandateAmount || '0').toLocaleString()} will begin based on your plan`
+                        : 'After activation, direct debit payments will begin based on your subscription plan'}
                     </li>
                   </ul>
                 </div>
@@ -3303,7 +4157,7 @@ DSTV Nigeria`;
                 {/* Print-only content */}
                 <div className="hidden print:block text-center mt-8 pt-4 border-t border-gray-200">
                   <p className="text-sm text-gray-500">Generated on {new Date().toLocaleDateString()}</p>
-                  <p className="text-sm text-gray-500">DSTV Nigeria - Subscription Management</p>
+                  <p className="text-sm text-gray-500">{business?.businessName} - Subscription Management</p>
                 </div>
               </div>
 
@@ -3335,7 +4189,7 @@ DSTV Nigeria`;
                   className="flex-1 bg-green-600 hover:bg-green-700"
                   onClick={() => {
                     setVerificationModal(false);
-                    toast.success('Verification details shared. Mandate will activate once customer completes ₦50 transfer.');
+                    toast.success('Mandate details shared. Mandate will activate once customer completes ₦50 transfer.');
                   }}
                 >
                   <CheckIcon className="h-4 w-4 mr-2" />

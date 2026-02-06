@@ -27,7 +27,7 @@ interface OnboardingStep {
 }
 
 interface OnboardingGuideProps {
-  type: 'tenant' | 'customer';
+  type: 'business' | 'customer';
   open: boolean;
   onClose: () => void;
 }
@@ -35,7 +35,7 @@ interface OnboardingGuideProps {
 export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
 
-  const tenantSteps: OnboardingStep[] = [
+  const businessSteps: OnboardingStep[] = [
     {
       id: 'business-setup',
       title: 'Complete Business Profile',
@@ -97,7 +97,7 @@ export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
     },
   ];
 
-  const steps = type === 'tenant' ? tenantSteps : customerSteps;
+  const steps = type === 'business' ? businessSteps : customerSteps;
   const completedCount = steps.filter((s) => s.completed).length;
   const progress = (completedCount / steps.length) * 100;
 
@@ -107,7 +107,7 @@ export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl">
-              {type === 'tenant' ? 'Get Started with Reccur' : 'Welcome to Your Subscriptions'}
+              {type === 'business' ? 'Get Started with Suscribly' : 'Welcome to Your Subscriptions'}
             </DialogTitle>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -116,7 +116,7 @@ export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
             </Button>
           </div>
           <DialogDescription>
-            {type === 'tenant'
+            {type === 'business'
               ? 'Follow these steps to start collecting recurring payments'
               : 'Here\'s how to manage your subscriptions'}
           </DialogDescription>
@@ -190,7 +190,7 @@ export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
             })}
           </div>
 
-          {type === 'tenant' && (
+          {type === 'business' && (
             <Card className="bg-blue-50 border-blue-200">
               <CardHeader>
                 <CardTitle className="text-base">Need Help Getting Started?</CardTitle>
@@ -216,7 +216,7 @@ export function OnboardingGuide({ type, open, onClose }: OnboardingGuideProps) {
   );
 }
 
-export function OnboardingBanner({ type, onStart }: { type: 'tenant' | 'customer'; onStart: () => void }) {
+export function OnboardingBanner({ type, onStart }: { type: 'business' | 'customer'; onStart: () => void }) {
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
@@ -231,10 +231,10 @@ export function OnboardingBanner({ type, onStart }: { type: 'tenant' | 'customer
             </div>
             <div>
               <h3 className="font-semibold text-gray-900">
-                {type === 'tenant' ? 'Complete Your Setup' : 'Get the Most from Your Subscriptions'}
+                {type === 'business' ? 'Complete Your Setup' : 'Get the Most from Your Subscriptions'}
               </h3>
               <p className="text-sm text-gray-600">
-                {type === 'tenant'
+                {type === 'business'
                   ? 'Follow our quick setup guide to start accepting recurring payments'
                   : 'Learn how to manage your subscriptions and payment methods'}
               </p>
