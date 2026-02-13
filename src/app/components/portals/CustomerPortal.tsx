@@ -93,6 +93,7 @@ export function CustomerPortal() {
   const [banksList, setBanksList] = useState<BankResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
 
   // Profile form states
   const [profileFirstName, setProfileFirstName] = useState('');
@@ -382,6 +383,7 @@ export function CustomerPortal() {
 
   const confirmUnlinkAccount = async () => {
     if (!selectedMandate) return;
+    setIsUnlinking(true);
     try {
       await billingApi.deleteMandate(selectedMandate.mandateId);
       toast.success(`Bank account (***${(selectedMandate.mandateAccountNumber || '').slice(-4)}) has been unlinked`);
@@ -390,6 +392,8 @@ export function CustomerPortal() {
       loadData();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to unlink account');
+    } finally {
+      setIsUnlinking(false);
     }
   };
 
@@ -1140,11 +1144,11 @@ export function CustomerPortal() {
             </div>
           )}
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowUnlinkDialog(false)} className="flex-1 sm:flex-none">
+            <Button variant="outline" onClick={() => setShowUnlinkDialog(false)} disabled={isUnlinking} className="flex-1 sm:flex-none">
               Keep Account
             </Button>
-            <Button variant="destructive" onClick={confirmUnlinkAccount} className="flex-1 sm:flex-none">
-              Unlink Account
+            <Button variant="destructive" onClick={confirmUnlinkAccount} disabled={isUnlinking} className="flex-1 sm:flex-none">
+              {isUnlinking ? 'Unlinking...' : 'Unlink Account'}
             </Button>
           </DialogFooter>
         </DialogContent>

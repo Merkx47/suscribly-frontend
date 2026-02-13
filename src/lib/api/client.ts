@@ -49,6 +49,19 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Token refresh mutex — prevents concurrent refresh attempts
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach(cb => cb(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 // Response interceptor - handle token refresh and auth errors
 apiClient.interceptors.response.use(
   (response) => response,
@@ -59,6 +72,20 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && refreshToken && !originalRequest._retry) {
       originalRequest._retry = true;
 
+      // If already refreshing, queue this request to retry after refresh completes
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          addRefreshSubscriber((newToken: string) => {
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            }
+            resolve(apiClient(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
       try {
         const response = await axios.post(`${API_BASE_URL}/api/auth/refresh-token`, {
           refreshToken,
@@ -67,6 +94,8 @@ apiClient.interceptors.response.use(
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data;
         setTokens(newAccessToken, newRefreshToken);
 
+        onTokenRefreshed(newAccessToken);
+
         // Retry the original request
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
@@ -74,22 +103,18 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         // Refresh failed, clear tokens and redirect to login
+        refreshSubscribers = [];
         clearTokens();
         const loginPath = window.location.pathname.includes('/admin') ? '/admin/login' : window.location.pathname.includes('/business') ? '/business/login' : window.location.pathname.includes('/customer') ? '/customer/login' : '/login';
         window.location.href = loginPath;
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
 
-    // Handle 403 (forbidden) - only redirect if not on login page already
-    if (error.response?.status === 403 && !originalRequest._retry) {
-      const isOnLoginPage = window.location.pathname.includes('/login');
-      if (!isOnLoginPage) {
-        originalRequest._retry = true;
-        clearTokens();
-        const loginPath = window.location.pathname.includes('/admin') ? '/admin/login' : window.location.pathname.includes('/business') ? '/business/login' : window.location.pathname.includes('/customer') ? '/customer/login' : '/login';
-        window.location.href = loginPath;
-      }
+    // Handle 403 (forbidden) - do NOT logout, just reject (user lacks permission)
+    if (error.response?.status === 403) {
       return Promise.reject(error);
     }
 

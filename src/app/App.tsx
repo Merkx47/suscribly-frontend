@@ -365,6 +365,8 @@ export default function App() {
           <Route path="/admin/businesses" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/service-tiers" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/activity" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/platform" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/mandates" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute requiredRole="ADMIN"><AdminDashboard /></ProtectedRoute>} />
 
           {/* Business Routes */}
@@ -378,6 +380,7 @@ export default function App() {
           <Route path="/business/:slug/plans" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
           <Route path="/business/:slug/customers" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
           <Route path="/business/:slug/subscriptions" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/business/:slug/active-subscribers" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
           <Route path="/business/:slug/mandates" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
           <Route path="/business/:slug/transactions" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />
           <Route path="/business/:slug/coupons" element={<ProtectedRoute><BusinessDashboard /></ProtectedRoute>} />

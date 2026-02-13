@@ -74,6 +74,44 @@ export interface CustomerPlanInfo {
   planSetupFee: string | null;
   planIsPopular: boolean | null;
   features: string[];
+  subscriptionStatus: string | null;
+}
+
+// ========== CUSTOMER EMAIL OTP TYPES ==========
+
+export interface SendCustomerEmailOtpResponse {
+  message: string;
+  emailMasked: string;
+}
+
+export interface VerifyCustomerEmailOtpResponse {
+  message: string;
+  verified: boolean;
+}
+
+// ========== BUSINESS PAYMENT DETAILS ==========
+
+export interface BusinessPaymentDetails {
+  businessName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  bankCode: string | null;
+  bankName: string | null;
+  validationAmount: string;
+}
+
+// ========== MANDATE OTP TYPES ==========
+
+export interface SendMandateOtpResponse {
+  message: string;
+  phoneLastFour: string | null;
+  emailMasked: string | null;
+  channel: string;
+}
+
+export interface VerifyMandateOtpResponse {
+  verificationToken: string;
+  expiresInSeconds: number;
 }
 
 export const customersApi = {
@@ -110,6 +148,31 @@ export const customersApi = {
 
   async getMyBusinesses(): Promise<CustomerBusinessInfo[]> {
     const response = await apiClient.get<CustomerBusinessInfo[]>('/api/customer-portal/my-businesses');
+    return response.data;
+  },
+
+  async sendMandateOtp(customerId: string, channel: 'whatsapp' | 'email' = 'whatsapp'): Promise<SendMandateOtpResponse> {
+    const response = await apiClient.post<SendMandateOtpResponse>('/api/customer-portal/send-mandate-otp', { customerId, channel });
+    return response.data;
+  },
+
+  async verifyMandateOtp(customerId: string, otpCode: string): Promise<VerifyMandateOtpResponse> {
+    const response = await apiClient.post<VerifyMandateOtpResponse>('/api/customer-portal/verify-mandate-otp', { customerId, otpCode });
+    return response.data;
+  },
+
+  async getBusinessPaymentDetails(businessId: string): Promise<BusinessPaymentDetails> {
+    const response = await apiClient.get<BusinessPaymentDetails>(`/api/customer-portal/business-payment-details/${businessId}`);
+    return response.data;
+  },
+
+  async sendCustomerEmailOtp(email: string): Promise<SendCustomerEmailOtpResponse> {
+    const response = await apiClient.post<SendCustomerEmailOtpResponse>('/api/customer/send-email-otp', { email });
+    return response.data;
+  },
+
+  async verifyCustomerEmailOtp(email: string, otpCode: string): Promise<VerifyCustomerEmailOtpResponse> {
+    const response = await apiClient.post<VerifyCustomerEmailOtpResponse>('/api/customer/verify-email-otp', { email, otpCode });
     return response.data;
   },
 };

@@ -54,7 +54,7 @@ export function AvailableSubscriptions() {
   // Plan card component
   const PlanCard = ({ plan, business }: { plan: CustomerPlanInfo; business: CustomerBusinessInfo }) => (
     <Card className="border-0 shadow-md hover:shadow-lg transition-shadow flex flex-col relative">
-      {plan.planTrialDays && plan.planTrialDays > 0 && (
+      {plan.planTrialDays != null && plan.planTrialDays > 0 && (
         <div className="absolute -top-2 -right-2 z-10">
           <Badge className="bg-green-500 text-white shadow-md px-2 py-1 text-xs font-semibold">
             <ClockIcon className="h-3 w-3 mr-1 inline" />
@@ -111,12 +111,25 @@ export function AvailableSubscriptions() {
           </div>
         )}
 
-        <Button
-          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-          onClick={() => handleSubscribeClick(plan, business)}
-        >
-          Subscribe Now
-        </Button>
+        {plan.subscriptionStatus ? (
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled
+          >
+            <CheckIcon className="h-4 w-4 mr-2" />
+            {plan.subscriptionStatus === 'ACTIVE' ? 'Subscribed' :
+             plan.subscriptionStatus === 'PENDING_ACTIVATION' ? 'Pending Activation' :
+             plan.subscriptionStatus === 'TRIALING' ? 'In Trial' : 'Subscribed'}
+          </Button>
+        ) : (
+          <Button
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+            onClick={() => handleSubscribeClick(plan, business)}
+          >
+            Subscribe Now
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

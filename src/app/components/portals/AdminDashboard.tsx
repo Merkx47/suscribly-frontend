@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { clearTokens, businessesApi, customersApi, subscriptionsApi, adminServiceTierApi, authApi, auditLogsApi, formatPrice, formatLimit } from '@/lib/api';
+import { clearTokens, businessesApi, customersApi, subscriptionsApi, adminServiceTierApi, authApi, auditLogsApi, billingApi, formatPrice, formatLimit } from '@/lib/api';
 import type { BusinessResponse, PageResponse, ServiceTierResponse, AuditLogResponse } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/app/components/ui/card';
+import { Badge } from '@/app/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/app/components/ui/command';
 import { MetricCard } from '@/app/components/MetricCard';
 import { StatusBadge } from '@/app/components/StatusBadges';
 import { Input } from '@/app/components/ui/input';
@@ -29,6 +32,9 @@ import {
   SettingsIcon,
   FileTextIcon,
   PackageIcon,
+  CreditCardIcon,
+  CheckIcon,
+  RefreshIcon,
 } from '@/app/components/icons/FinanceIcons';
 import {
   DropdownMenu,
@@ -47,7 +53,55 @@ import {
 import { Textarea } from '@/app/components/ui/textarea';
 import { toast } from 'sonner';
 
-type ActiveSection = 'overview' | 'businesses' | 'plans' | 'activity' | 'settings';
+// Generate human-readable description for audit log entries
+const getAuditDescription = (log: AuditLogResponse): string => {
+  const parseJson = (val?: string | null) => {
+    if (!val) return {};
+    try { return JSON.parse(val); } catch { return {}; }
+  };
+  const newVals = parseJson(log.auditLogNewValues);
+  const oldVals = parseJson(log.auditLogOldValues);
+  const entity = log.auditLogEntityName;
+  const action = log.auditLogAction;
+
+  switch (action) {
+    case 'TIER_UPGRADE_INITIATED':
+      return `Initiated upgrade to ${newVals.tierName || 'new tier'}${newVals.billingCycle ? ` (${newVals.billingCycle})` : ''}`;
+    case 'TIER_UPGRADE_ACTIVATED':
+      return `Tier upgrade activated${newVals.periodEnd ? ` — valid until ${new Date(newVals.periodEnd).toLocaleDateString()}` : ''}`;
+    case 'TIER_CANCELLED':
+      return `Cancelled tier subscription${newVals.status ? ` — status set to ${newVals.status}` : ''}`;
+    case 'SUSPEND':
+      return `Business suspended${newVals.reason ? `: ${newVals.reason}` : ''}`;
+    case 'ACTIVATE':
+      return `Business activated`;
+    case 'CREATE':
+      if (entity === 'ServiceTier') return `Created service tier "${newVals.name || ''}"`;
+      if (entity === 'BusinessSubscription') return `Created business subscription`;
+      return `Created ${entity}`;
+    case 'UPDATE':
+      if (entity === 'ServiceTier') return `Updated service tier "${newVals.name || oldVals.name || ''}"`;
+      if (entity === 'BusinessSubscription') return `Updated business subscription status to ${newVals.status || 'unknown'}`;
+      return `Updated ${entity}`;
+    case 'DELETE':
+      if (entity === 'ServiceTier') return `Deleted service tier "${oldVals.name || ''}"`;
+      if (entity === 'BusinessSubscription') return `Deleted business subscription`;
+      return `Deleted ${entity}`;
+    default:
+      return `${action} on ${entity}`;
+  }
+};
+
+// Format a number string with commas (e.g., "1000000" → "1,000,000")
+const formatAmountInput = (value: string): string => {
+  const cleaned = value.replace(/[^\d.]/g, '');
+  const parts = cleaned.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.length > 1 ? `${parts[0]}.${parts[1]}` : parts[0];
+};
+const stripCommas = (value: string): string => value.replace(/,/g, '');
+
+type ActiveSection = 'overview' | 'businesses' | 'plans' | 'activity' | 'platform' | 'mandates' | 'settings';
 
 interface NavItem {
   id: ActiveSection;
@@ -60,6 +114,8 @@ const navItems: NavItem[] = [
   { id: 'businesses', label: 'Businesses', icon: BuildingIcon },
   { id: 'plans', label: 'Service Tiers', icon: PackageIcon },
   { id: 'activity', label: 'Activity', icon: FileTextIcon },
+  { id: 'platform', label: 'Platform Account', icon: CreditCardIcon },
+  { id: 'mandates', label: 'Tier Mandates', icon: FileTextIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -69,6 +125,8 @@ const sectionMap: Record<string, ActiveSection> = {
   'businesses': 'businesses',
   'service-tiers': 'plans',
   'activity': 'activity',
+  'platform': 'platform',
+  'mandates': 'mandates',
   'settings': 'settings',
 };
 
@@ -123,6 +181,19 @@ export function AdminDashboard() {
   const [tierFormFeatures, setTierFormFeatures] = useState('');
   const [tierFormIsPopular, setTierFormIsPopular] = useState(false);
 
+  // Platform account states
+  const [platformConfig, setPlatformConfig] = useState<any>(null);
+  const [platBankCode, setPlatBankCode] = useState('');
+  const [platBankName, setPlatBankName] = useState('');
+  const [platAccountNumber, setPlatAccountNumber] = useState('');
+  const [platAccountName, setPlatAccountName] = useState('');
+  const [platBankOpen, setPlatBankOpen] = useState(false);
+  const [platSaving, setPlatSaving] = useState(false);
+  const [platRegistering, setPlatRegistering] = useState(false);
+  const [platBanksList, setPlatBanksList] = useState<Array<{bankCode: string; bankName: string}>>([]);
+  const [platLookingUp, setPlatLookingUp] = useState(false);
+  const [platNotificationUrl, setPlatNotificationUrl] = useState('');
+
   // Sync URL to active section
   useEffect(() => {
     const path = location.pathname;
@@ -138,6 +209,7 @@ export function AdminDashboard() {
   const handleSectionChange = (sectionId: ActiveSection) => {
     const urlPath = sectionId === 'overview' ? 'dashboard'
       : sectionId === 'plans' ? 'service-tiers'
+      : sectionId === 'platform' ? 'platform'
       : sectionId;
     navigate(`/admin/${urlPath}`);
     setActiveSection(sectionId);
@@ -159,7 +231,8 @@ export function AdminDashboard() {
   const fetchServiceTiers = async () => {
     try {
       const data = await adminServiceTierApi.listTiers();
-      setServiceTiers(data);
+      const sorted = [...data].sort((a, b) => (a.serviceTierSortOrder ?? 0) - (b.serviceTierSortOrder ?? 0));
+      setServiceTiers(sorted);
     } catch (err) {
       console.error('Failed to fetch service tiers', err);
     }
@@ -215,6 +288,32 @@ export function AdminDashboard() {
       fetchActivityLogs(activityPage - 1, activityPageSize);
     }
   }, [activeSection, activityPage, activityPageSize]);
+
+  // Fetch platform config and banks when platform section is active
+  useEffect(() => {
+    if (activeSection === 'platform') {
+      // Fetch platform config
+      const fetchPlatformConfig = async () => {
+        try {
+          const { platformConfigApi } = await import('@/lib/api/platformConfig');
+          const config = await platformConfigApi.getConfig();
+          setPlatformConfig(config);
+          if (config.platformConfigBankCode) setPlatBankCode(config.platformConfigBankCode);
+          if (config.platformConfigAccountNumber) setPlatAccountNumber(config.platformConfigAccountNumber);
+          if (config.platformConfigAccountName) setPlatAccountName(config.platformConfigAccountName);
+          if (config.platformConfigNotificationUrl) setPlatNotificationUrl(config.platformConfigNotificationUrl);
+        } catch { /* Not configured yet */ }
+      };
+      fetchPlatformConfig();
+
+      // Fetch banks list
+      if (platBanksList.length === 0) {
+        billingApi.getBanks(0, 200).then((banksPage: any) => {
+          setPlatBanksList(banksPage.content.map((b: any) => ({ bankCode: b.bankCode || '', bankName: b.bankName || '' })).sort((a: any, b: any) => a.bankName.localeCompare(b.bankName)));
+        }).catch(() => {});
+      }
+    }
+  }, [activeSection]);
 
   // Computed metrics
   const activeBusinesses = businesses.filter(b => b.businessStatus === 'ACTIVE' || b.businessStatus === 'Active').length;
@@ -292,8 +391,8 @@ export function AdminDashboard() {
     setSelectedTier(tier);
     setTierFormName(tier.serviceTierName || '');
     setTierFormDescription(tier.serviceTierDescription || '');
-    setTierFormMonthlyPrice(tier.serviceTierMonthlyPrice || '');
-    setTierFormAnnualPrice(tier.serviceTierYearlyPrice || '');
+    setTierFormMonthlyPrice(tier.serviceTierMonthlyPrice ? formatAmountInput(tier.serviceTierMonthlyPrice) : '');
+    setTierFormAnnualPrice(tier.serviceTierYearlyPrice ? formatAmountInput(tier.serviceTierYearlyPrice) : '');
     setTierFormMaxCustomers(tier.serviceTierMaxCustomers?.toString() || '');
     setTierFormMaxProducts(tier.serviceTierMaxProducts?.toString() || '');
     setTierFormMaxTeamMembers(tier.serviceTierMaxTeamMembers?.toString() || '');
@@ -312,8 +411,8 @@ export function AdminDashboard() {
       await adminServiceTierApi.createTier({
         serviceTierName: tierFormName,
         serviceTierDescription: tierFormDescription || undefined,
-        serviceTierMonthlyPrice: tierFormMonthlyPrice || '0',
-        serviceTierYearlyPrice: tierFormAnnualPrice || undefined,
+        serviceTierMonthlyPrice: stripCommas(tierFormMonthlyPrice) || '0',
+        serviceTierYearlyPrice: tierFormAnnualPrice ? stripCommas(tierFormAnnualPrice) : undefined,
         serviceTierMaxCustomers: tierFormMaxCustomers ? parseInt(tierFormMaxCustomers) : undefined,
         serviceTierMaxProducts: tierFormMaxProducts ? parseInt(tierFormMaxProducts) : undefined,
         serviceTierMaxTeamMembers: tierFormMaxTeamMembers ? parseInt(tierFormMaxTeamMembers) : undefined,
@@ -335,8 +434,8 @@ export function AdminDashboard() {
       await adminServiceTierApi.updateTier(selectedTier.serviceTierId, {
         serviceTierName: tierFormName,
         serviceTierDescription: tierFormDescription || undefined,
-        serviceTierMonthlyPrice: tierFormMonthlyPrice || '0',
-        serviceTierYearlyPrice: tierFormAnnualPrice || undefined,
+        serviceTierMonthlyPrice: stripCommas(tierFormMonthlyPrice) || '0',
+        serviceTierYearlyPrice: tierFormAnnualPrice ? stripCommas(tierFormAnnualPrice) : undefined,
         serviceTierMaxCustomers: tierFormMaxCustomers ? parseInt(tierFormMaxCustomers) : undefined,
         serviceTierMaxProducts: tierFormMaxProducts ? parseInt(tierFormMaxProducts) : undefined,
         serviceTierMaxTeamMembers: tierFormMaxTeamMembers ? parseInt(tierFormMaxTeamMembers) : undefined,
@@ -392,7 +491,7 @@ export function AdminDashboard() {
   // Helper to parse features string into array for display
   const parseFeatures = (features: string | null): string[] => {
     if (!features) return [];
-    return features.split('\n').map(f => f.trim()).filter(f => f.length > 0);
+    return features.split(/[,\n]/).map(f => f.trim()).filter(f => f.length > 0);
   };
 
   // Overview Section
@@ -536,6 +635,9 @@ export function AdminDashboard() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-gray-900">All Businesses</CardTitle>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => fetchBusinesses(currentPage - 1, pageSize)} disabled={isLoading}>
+                <RefreshIcon className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
               <div className="relative">
                 <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
@@ -560,6 +662,7 @@ export function AdminDashboard() {
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Business Name</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Email</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Service Tier</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">NDD Status</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Joined</th>
@@ -577,6 +680,20 @@ export function AdminDashboard() {
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-600">
                         {business.businessEmail}
+                      </td>
+                      <td className="py-3 px-4">
+                        {business.serviceTierName ? (
+                          <div>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {business.serviceTierName}
+                            </span>
+                            {business.serviceTierBillingCycle && (
+                              <div className="text-xs text-gray-500 mt-0.5">{business.serviceTierBillingCycle}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">FREE</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <StatusBadge status={business.businessStatus || 'Unknown'} type="general" />
@@ -665,7 +782,7 @@ export function AdminDashboard() {
           {serviceTiers.map((tier) => {
             const features = parseFeatures(tier.serviceTierFeatures);
             return (
-              <Card key={tier.serviceTierId} className={`relative hover:shadow-lg transition-shadow ${tier.serviceTierIsPopular ? 'ring-2 ring-purple-500' : ''}`}>
+              <Card key={tier.serviceTierId} className={`relative flex flex-col hover:shadow-lg transition-shadow ${tier.serviceTierIsPopular ? 'ring-2 ring-purple-500' : ''}`}>
                 {tier.serviceTierIsPopular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
                     Popular
@@ -702,21 +819,23 @@ export function AdminDashboard() {
                     </DropdownMenu>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex flex-col flex-1">
                   {tier.serviceTierDescription && (
                     <p className="text-sm text-gray-600 mb-4">{tier.serviceTierDescription}</p>
                   )}
-                  {features.length > 0 && (
-                    <ul className="space-y-2 mb-4">
-                      {features.map((feature, index) => (
-                        <li key={index} className="flex items-start">
-                          <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                          <span className="text-sm text-gray-600">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="space-y-2 pt-2 border-t">
+                  <div className="flex-1">
+                    {features.length > 0 && (
+                      <ul className="space-y-2 mb-4">
+                        {features.map((feature, index) => (
+                          <li key={index} className="flex items-start">
+                            <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm text-gray-600">{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="space-y-2 pt-2 border-t mt-auto">
                     <div className="flex justify-between text-xs text-gray-500">
                       <span>Max Customers</span>
                       <span className="font-medium text-gray-700">{formatLimit(tier.serviceTierMaxCustomers)}</span>
@@ -751,6 +870,10 @@ export function AdminDashboard() {
           <h2 className="text-2xl font-bold text-gray-900">Activity Logs</h2>
           <p className="text-sm text-gray-500 mt-1">Platform audit trail and activity monitoring</p>
         </div>
+        <Button variant="outline" size="sm" onClick={() => fetchActivityLogs(activityPage - 1, activityPageSize)}>
+          <RefreshIcon className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       <Card>
@@ -771,8 +894,7 @@ export function AdminDashboard() {
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50">
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
@@ -784,15 +906,12 @@ export function AdminDashboard() {
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                           {new Date(log.auditLogCreatedAt).toLocaleString()}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {log.auditLogAction}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          <div>{log.auditLogEntityName}</div>
-                          <div className="text-xs text-gray-400 truncate max-w-xs">{log.auditLogEntityId}</div>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          <div className="font-medium">{getAuditDescription(log)}</div>
+                          <div className="text-xs text-gray-400">{log.auditLogEntityName} · {log.auditLogAction}</div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {log.auditLogUserId || 'System'}
+                          {log.auditLogUserName || log.auditLogUserEmail || 'System'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <StatusBadge status={log.auditLogStatus} type="general" />
@@ -879,6 +998,318 @@ export function AdminDashboard() {
     </div>
   );
 
+  // Platform Account Section
+  const PlatformSection = () => (
+    <div className="space-y-6">
+      {/* Section Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Platform Account</h2>
+        <p className="text-sm text-gray-500 mt-1">Configure Suscribly's bank account and NDD biller registration</p>
+      </div>
+
+      {/* Card 1: Platform Bank Account */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-gray-900">Platform Bank Account</CardTitle>
+          <CardDescription>Configure Suscribly's bank account for receiving tier subscription payments</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Bank</Label>
+              <Popover open={platBankOpen} onOpenChange={setPlatBankOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" aria-expanded={platBankOpen} className="w-full justify-between font-normal">
+                    {platBankCode ? platBanksList.find(b => b.bankCode === platBankCode)?.bankName || 'Select bank' : 'Select bank'}
+                    <SearchIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search bank..." />
+                    <CommandList>
+                      <CommandEmpty>No bank found.</CommandEmpty>
+                      <CommandGroup>
+                        {platBanksList.map((bank) => (
+                          <CommandItem
+                            key={bank.bankCode}
+                            value={bank.bankName}
+                            onSelect={() => {
+                              setPlatBankCode(bank.bankCode);
+                              setPlatBankName(bank.bankName);
+                              setPlatAccountName('');
+                              setPlatBankOpen(false);
+                            }}
+                          >
+                            <CheckIcon className={`mr-2 h-4 w-4 ${platBankCode === bank.bankCode ? 'opacity-100' : 'opacity-0'}`} />
+                            {bank.bankName}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Account Number</Label>
+              <Input
+                placeholder="0123456789"
+                value={platAccountNumber}
+                maxLength={10}
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/\D/g, '');
+                  setPlatAccountNumber(cleaned);
+                  if (cleaned.length === 10 && platBankCode) {
+                    setPlatLookingUp(true);
+                    setPlatAccountName('');
+                    billingApi.verifyBankAccount({ bankCode: platBankCode, accountNumber: cleaned })
+                      .then((res: any) => setPlatAccountName(res.accountName || ''))
+                      .catch(() => toast.error('Account lookup failed'))
+                      .finally(() => setPlatLookingUp(false));
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Account Name</Label>
+              <Input
+                value={platLookingUp ? 'Looking up...' : platAccountName}
+                disabled
+                className="bg-gray-50"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Notification URL</Label>
+              <Input
+                placeholder="https://api.suscribly.com/ndd/webhook/callback"
+                value={platNotificationUrl}
+                onChange={(e) => setPlatNotificationUrl(e.target.value)}
+              />
+              <p className="text-xs text-gray-400">The public URL where NIBSS will send mandate status webhooks</p>
+            </div>
+            <div className="md:col-span-2">
+              <Button
+                disabled={!platBankCode || !platAccountNumber || !platAccountName || platSaving}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={async () => {
+                  setPlatSaving(true);
+                  try {
+                    const { platformConfigApi } = await import('@/lib/api/platformConfig');
+                    const updated = await platformConfigApi.createOrUpdate({
+                      platformConfigBankCode: platBankCode,
+                      platformConfigAccountNumber: platAccountNumber,
+                      platformConfigAccountName: platAccountName,
+                      platformConfigNotificationUrl: platNotificationUrl || undefined,
+                    });
+                    setPlatformConfig(updated);
+                    toast.success('Platform account saved');
+                  } catch (error: any) {
+                    const msg = error?.response?.data?.message || 'Failed to save platform bank account';
+                    toast.error(msg);
+                  } finally {
+                    setPlatSaving(false);
+                  }
+                }}
+              >
+                {platSaving ? 'Saving...' : 'Save Bank Account'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 2: NDD Biller Registration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-gray-900">NDD Biller Registration</CardTitle>
+          <CardDescription>Register Suscribly as an NDD biller with NIBSS for direct debit collections</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {platformConfig?.platformConfigSyncStatus === 'SYNCED' ? (
+              <div className="flex items-center gap-3">
+                <Badge className="bg-green-100 text-green-800 border-green-200">Registered</Badge>
+                {platformConfig?.platformConfigBillerNibssId && (
+                  <span className="text-sm text-gray-500">
+                    NIBSS ID: <span className="font-mono font-medium text-gray-700">{platformConfig.platformConfigBillerNibssId}</span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {platformConfig?.platformConfigSyncStatus && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500">Status:</span>
+                    <Badge variant="outline">{platformConfig.platformConfigSyncStatus}</Badge>
+                  </div>
+                )}
+                <Button
+                  disabled={!platformConfig?.platformConfigBankCode || platRegistering}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={async () => {
+                    setPlatRegistering(true);
+                    try {
+                      const { platformConfigApi } = await import('@/lib/api/platformConfig');
+                      const updated = await platformConfigApi.registerAsBiller();
+                      setPlatformConfig(updated);
+                      toast.success('Successfully registered as NDD biller');
+                    } catch (error: any) {
+                      const msg = error?.response?.data?.message || 'Failed to register as NDD biller';
+                      toast.error(msg);
+                    } finally {
+                      setPlatRegistering(false);
+                    }
+                  }}
+                >
+                  {platRegistering ? 'Registering...' : 'Register as NDD Biller'}
+                </Button>
+                {!platformConfig?.platformConfigBankCode && (
+                  <p className="text-sm text-gray-400">Save a bank account above before registering as an NDD biller.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const TierMandatesSection = () => {
+    const [tierMandates, setTierMandates] = useState<any[]>([]);
+    const [loadingMandates, setLoadingMandates] = useState(true);
+    const [activatingId, setActivatingId] = useState<string | null>(null);
+
+    const fetchMandates = async () => {
+      setLoadingMandates(true);
+      try {
+        const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+        const data = await tierUpgradeApi.adminListMandates();
+        setTierMandates(data);
+      } catch {
+        toast.error('Failed to load tier mandates');
+      } finally {
+        setLoadingMandates(false);
+      }
+    };
+
+    useEffect(() => {
+      fetchMandates();
+    }, []);
+
+    const handleActivate = async (mandateId: string) => {
+      setActivatingId(mandateId);
+      try {
+        const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+        await tierUpgradeApi.adminActivateMandate(mandateId);
+        toast.success('Mandate activated successfully');
+        // Refresh list
+        const data = await tierUpgradeApi.adminListMandates();
+        setTierMandates(data);
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Failed to activate mandate');
+      } finally {
+        setActivatingId(null);
+      }
+    };
+
+    const getStatusColor = (status: string | null) => {
+      switch (status?.toUpperCase()) {
+        case 'ACTIVE': return 'bg-green-100 text-green-800';
+        case 'PENDING': case 'PENDING_MANDATE': return 'bg-amber-100 text-amber-800';
+        case 'CANCELLED': return 'bg-red-100 text-red-800';
+        case 'PAST_DUE': return 'bg-orange-100 text-orange-800';
+        default: return 'bg-gray-100 text-gray-800';
+      }
+    };
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Tier Mandates</h2>
+            <p className="text-sm text-gray-500 mt-1">View and manage business tier subscription mandates</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchMandates} disabled={loadingMandates}>
+            <RefreshIcon className={`h-4 w-4 mr-2 ${loadingMandates ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+
+        <Card>
+          <CardContent className="p-0">
+            {loadingMandates ? (
+              <div className="p-8 text-center text-muted-foreground">Loading...</div>
+            ) : tierMandates.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">No tier mandates found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Business</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Tier</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Amount</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Mandate Status</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Subscription</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Date</th>
+                      <th className="text-right py-3 px-4 text-sm font-medium text-gray-600">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tierMandates.map((m: any) => (
+                      <tr key={m.businessSubscriptionId || m.mandateId} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <div className="text-sm font-medium">{m.businessName || 'N/A'}</div>
+                          <div className="text-xs text-muted-foreground">{m.businessEmail}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge variant="outline">{m.serviceTierName || 'N/A'}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-sm font-mono">
+                          {m.mandateAmount ? `₦${parseFloat(m.mandateAmount).toLocaleString()}` : 'N/A'}
+                          <span className="text-xs text-muted-foreground ml-1">/{m.billingCycle?.toLowerCase()}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(m.mandateStatus)}`}>
+                            {m.mandateStatus || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(m.subscriptionStatus)}`}>
+                            {m.subscriptionStatus || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-muted-foreground">
+                          {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {m.mandateStatus === 'PENDING' && m.subscriptionStatus === 'PENDING_MANDATE' && m.mandateId && (
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              disabled={activatingId === m.mandateId}
+                              onClick={() => handleActivate(m.mandateId)}
+                            >
+                              {activatingId === m.mandateId ? 'Activating...' : 'Activate'}
+                            </Button>
+                          )}
+                          {m.subscriptionStatus === 'ACTIVE' && (
+                            <span className="text-xs text-green-600 font-medium">Active</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'overview':
@@ -889,6 +1320,10 @@ export function AdminDashboard() {
         return <PlansSection />;
       case 'activity':
         return <ActivitySection />;
+      case 'platform':
+        return PlatformSection();
+      case 'mandates':
+        return <TierMandatesSection />;
       case 'settings':
         return <SettingsSection />;
       default:
@@ -999,6 +1434,23 @@ export function AdminDashboard() {
                   <Label className="text-sm font-medium text-gray-600">Status</Label>
                   <div className="mt-1">
                     <StatusBadge status={selectedBusiness.businessStatus || 'Unknown'} type="general" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-600">Service Tier</Label>
+                  <div className="mt-1">
+                    {selectedBusiness.serviceTierName ? (
+                      <div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {selectedBusiness.serviceTierName}
+                        </span>
+                        {selectedBusiness.serviceTierBillingCycle && (
+                          <span className="text-xs text-gray-500 ml-2">{selectedBusiness.serviceTierBillingCycle}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">FREE</span>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -1122,10 +1574,11 @@ export function AdminDashboard() {
                 <Label htmlFor="tier-monthly-price">Monthly Price (₦)</Label>
                 <Input
                   id="tier-monthly-price"
-                  type="number"
-                  placeholder="e.g., 50000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 50,000"
                   value={tierFormMonthlyPrice}
-                  onChange={(e) => setTierFormMonthlyPrice(e.target.value)}
+                  onChange={(e) => setTierFormMonthlyPrice(formatAmountInput(e.target.value))}
                   className="mt-1"
                 />
               </div>
@@ -1133,10 +1586,11 @@ export function AdminDashboard() {
                 <Label htmlFor="tier-annual-price">Yearly Price (₦, optional)</Label>
                 <Input
                   id="tier-annual-price"
-                  type="number"
-                  placeholder="e.g., 500000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 500,000"
                   value={tierFormAnnualPrice}
-                  onChange={(e) => setTierFormAnnualPrice(e.target.value)}
+                  onChange={(e) => setTierFormAnnualPrice(formatAmountInput(e.target.value))}
                   className="mt-1"
                 />
               </div>
@@ -1241,10 +1695,11 @@ export function AdminDashboard() {
                 <Label htmlFor="edit-tier-monthly-price">Monthly Price (₦)</Label>
                 <Input
                   id="edit-tier-monthly-price"
-                  type="number"
-                  placeholder="e.g., 50000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 50,000"
                   value={tierFormMonthlyPrice}
-                  onChange={(e) => setTierFormMonthlyPrice(e.target.value)}
+                  onChange={(e) => setTierFormMonthlyPrice(formatAmountInput(e.target.value))}
                   className="mt-1"
                 />
               </div>
@@ -1252,10 +1707,11 @@ export function AdminDashboard() {
                 <Label htmlFor="edit-tier-annual-price">Yearly Price (₦, optional)</Label>
                 <Input
                   id="edit-tier-annual-price"
-                  type="number"
-                  placeholder="e.g., 500000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 500,000"
                   value={tierFormAnnualPrice}
-                  onChange={(e) => setTierFormAnnualPrice(e.target.value)}
+                  onChange={(e) => setTierFormAnnualPrice(formatAmountInput(e.target.value))}
                   className="mt-1"
                 />
               </div>

@@ -12,6 +12,7 @@ export interface SignupRequest {
 export interface LoginRequest {
   email: string;
   password: string;
+  loginContext?: 'BUSINESS' | 'CUSTOMER';
 }
 
 export interface AuthResponse {
@@ -36,7 +37,7 @@ export interface UserProfileResponse {
   firstName: string;
   lastName: string;
   phone: string | null;
-  isActive: boolean;
+  isActive?: boolean;
   isVerified: boolean;
   roles: string[];
   permissions: string[];

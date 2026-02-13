@@ -3,24 +3,30 @@ import type { PageResponse } from './tenants';
 
 export interface WebhookResponse {
   webhookId: string;
-  webhookUrl: string;
+  webhookBusinessId: string | null;
+  webhookUrl: string | null;
   webhookEvents: string[];
   webhookIsActive: boolean;
-  webhookCreatedAt: string;
-  webhookUpdatedAt: string;
-  webhookBusinessId?: string;
+  webhookDescription: string | null;
+  webhookFailureCount: number | null;
+  webhookLastDeliveredAt: string | null;
+  webhookStatus: string | null;
+  webhookCreatedAt: string | null;
+  webhookUpdatedAt: string | null;
 }
 
 export interface CreateWebhookRequest {
   webhookUrl: string;
   webhookEvents: string[];
   webhookIsActive: boolean;
+  webhookDescription?: string;
 }
 
 export interface UpdateWebhookRequest {
   webhookUrl?: string;
   webhookEvents?: string[];
   webhookIsActive?: boolean;
+  webhookDescription?: string;
 }
 
 export const webhooksApi = {
@@ -51,7 +57,6 @@ export const webhooksApi = {
   },
 
   test: async (id: string): Promise<void> => {
-    // Test endpoint if available, otherwise this is a client-side placeholder
     await apiClient.post(`/api/webhook/${id}/test`);
   },
 };

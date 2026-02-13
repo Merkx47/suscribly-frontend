@@ -13,12 +13,39 @@ export interface ServiceTierResponse {
   serviceTierMaxCustomers: number | null;
   serviceTierMaxProducts: number | null;
   serviceTierMaxTeamMembers: number | null;
+  serviceTierMaxMandates: number | null;
+  serviceTierMaxSubscriptions: number | null;
+  serviceTierNddEnabled: boolean | null;
+  serviceTierAllowCustomerManagement: boolean | null;
   serviceTierFeatures: string | null;
   serviceTierIsPopular: boolean | null;
   serviceTierSortOrder: number | null;
   serviceTierStatus: string | null;
   serviceTierCreatedAt: string | null;
   serviceTierUpdatedAt: string | null;
+}
+
+export interface TierInfoResponse {
+  tierName: string | null;
+  tierId: string | null;
+  maxCustomers: number | null;
+  currentCustomers: number;
+  maxProducts: number | null;
+  currentProducts: number;
+  maxTeamMembers: number | null;
+  currentTeamMembers: number;
+  maxMandates: number | null;
+  currentMandates: number;
+  maxSubscriptions: number | null;
+  currentSubscriptions: number;
+  nddEnabled: boolean;
+  customerManagementEnabled: boolean;
+  billingCycle: string | null;
+  subscriptionStatus: string | null;
+  currentPeriodEnd: string | null;
+  mandateStatus: string | null;
+  monthlyPrice: string | null;
+  yearlyPrice: string | null;
 }
 
 export interface CreateServiceTierRequest {
@@ -105,11 +132,26 @@ export const formatPrice = (price: string | number | null, currency: string = 'N
 };
 
 export const formatLimit = (limit: number | null | undefined): string => {
-  return limit == null ? 'Unlimited' : limit.toLocaleString();
+  return (limit == null || limit < 0) ? 'Unlimited' : limit.toLocaleString();
+};
+
+// ========== BUSINESS TIER API (for businesses checking their own tier) ==========
+
+export const businessTierApi = {
+  async getMyTier(): Promise<TierInfoResponse> {
+    const response = await apiClient.get<TierInfoResponse>('/api/business_subscription/my-tier');
+    return response.data;
+  },
+
+  async listAvailableTiers(): Promise<ServiceTierResponse[]> {
+    const response = await apiClient.get<ServiceTierResponse[]>('/api/tier-upgrade/available-tiers');
+    return response.data;
+  },
 };
 
 export default {
   admin: adminServiceTierApi,
+  business: businessTierApi,
   formatPrice,
   formatLimit,
 };

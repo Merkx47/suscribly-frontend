@@ -23,6 +23,7 @@ export interface ProductResponse {
   productDescription: string | null;
   productAmount: number | null;
   productNddProductNibssId: string | null;
+  productNddProductLocalId: string | null;
   productNddSyncStatus: string | null;
   productNddSyncedAt: string | null;
   productStatus: string | null;

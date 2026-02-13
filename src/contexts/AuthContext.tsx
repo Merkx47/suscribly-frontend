@@ -109,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessAccountName: null,
         businessAccountNumber: null,
         businessNddBillerNibssId: null,
+        businessNddBillerLocalId: null,
         businessNddSyncStatus: null,
         businessNddSyncedAt: null,
         businessOwnerId: null,

@@ -128,7 +128,7 @@ export function AdminLogin() {
 
     setSendingForgotPassword(true);
     try {
-      await authApi.forgotPassword({ email: forgotPasswordEmail });
+      await authApi.forgotPassword(forgotPasswordEmail);
       setForgotPasswordSent(true);
     } catch (err: any) {
       // Still show success to avoid email enumeration

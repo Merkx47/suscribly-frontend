@@ -7,9 +7,10 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, type }: StatusBadgeProps) {
-  // Normalize status to Title Case for matching (handles "ACTIVE" -> "Active", etc.)
+  // Normalize status to Title Case for matching (handles "ACTIVE" -> "Active", "PENDING_ACTIVATION" -> "Pending Activation", etc.)
   const normalized = (status || 'Unknown')
     .toLowerCase()
+    .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   const getStatusColor = () => {
@@ -31,6 +32,9 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
     if (type === 'subscription') {
       const subscriptionColors: Record<string, string> = {
         'Active': 'bg-green-100 text-green-800 border-green-200',
+        'Pending Activation': 'bg-orange-100 text-orange-800 border-orange-200',
+        'Trialing': 'bg-blue-100 text-blue-800 border-blue-200',
+        'Past Due': 'bg-red-100 text-red-800 border-red-200',
         'Paused': 'bg-yellow-100 text-yellow-800 border-yellow-200',
         'Cancelled': 'bg-gray-100 text-gray-800 border-gray-200',
         'Expired': 'bg-red-100 text-red-800 border-red-200',

@@ -36,12 +36,16 @@ export interface BusinessResponse {
   businessAccountName: string | null;
   businessAccountNumber: string | null;
   businessNddBillerNibssId: string | null;
+  businessNddBillerLocalId: string | null;
   businessNddSyncStatus: string | null;
   businessNddSyncedAt: string | null;
   businessOwnerId: string | null;
   businessStatus: string | null;
   businessCreatedAt: string | null;
   businessUpdatedAt: string | null;
+  serviceTierName: string | null;
+  serviceTierBillingCycle: string | null;
+  businessSubscriptionStatus: string | null;
 }
 
 export interface PageResponse<T> {

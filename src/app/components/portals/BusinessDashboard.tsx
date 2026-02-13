@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { MetricCard } from '@/app/components/MetricCard';
 import { StatusBadge } from '@/app/components/StatusBadges';
+import { Badge } from '@/app/components/ui/badge';
 import { EmptyState } from '@/app/components/EmptyState';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
@@ -13,8 +14,8 @@ import { PortalHeader } from '@/app/components/PortalHeader';
 import { TablePagination } from '@/app/components/TablePagination';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCustomers, usePlans, useSubscriptions, useMandates, useDashboardMetrics } from '@/hooks/useApi';
-import { customersApi, plansApi, productsApi, subscriptionsApi, billingApi, businessesApi, settlementsApi, couponsApi, authApi, webhooksApi, CreateCustomerRequest, CreatePlanRequest, CreateSubscriptionRequest } from '@/lib/api';
-import type { SettlementResponse, ProductResponse, TransactionResponse, WebhookResponse } from '@/lib/api';
+import { customersApi, plansApi, productsApi, subscriptionsApi, billingApi, businessesApi, settlementsApi, couponsApi, authApi, webhooksApi, formatPrice, formatLimit, CreateCustomerRequest, CreatePlanRequest, CreateSubscriptionRequest } from '@/lib/api';
+import type { SettlementResponse, ProductResponse, TransactionResponse, WebhookResponse, CustomerSubscriptionStatusResponse } from '@/lib/api';
 import {
   UsersIcon,
   NairaIcon,
@@ -46,6 +47,15 @@ import {
   RefreshIcon,
 } from '@/app/components/icons/FinanceIcons';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+// Format a number string with commas (e.g., "1000000" → "1,000,000")
+const formatAmountInput = (value: string): string => {
+  const cleaned = value.replace(/[^\d.]/g, '');
+  const parts = cleaned.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.length > 1 ? `${parts[0]}.${parts[1]}` : parts[0];
+};
+const stripCommas = (value: string): string => value.replace(/,/g, '');
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,13 +77,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/app/components/ui/sheet';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/app/components/ui/input-otp';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/app/components/ui/command';
 import { toast } from 'sonner';
 
 
-type ActiveSection = 'overview' | 'products' | 'plans' | 'customers' | 'subscriptions' | 'mandates' | 'transactions' | 'coupons' | 'webhooks' | 'settings';
+type ActiveSection = 'overview' | 'products' | 'plans' | 'customers' | 'subscriptions' | 'active-subscribers' | 'mandates' | 'transactions' | 'coupons' | 'webhooks' | 'settings';
 
 interface NavItem {
   id: ActiveSection;
@@ -87,6 +98,7 @@ const navItems: NavItem[] = [
   { id: 'plans', label: 'Plans', icon: PackageIcon },
   { id: 'customers', label: 'Customers', icon: UsersIcon },
   { id: 'subscriptions', label: 'Subscriptions', icon: CreditCardIcon },
+  { id: 'active-subscribers', label: 'Active Subscribers', icon: TrendingUpIcon },
   { id: 'mandates', label: 'Mandates', icon: FileTextIcon },
   { id: 'transactions', label: 'Transactions', icon: NairaIcon },
   { id: 'coupons', label: 'Coupons', icon: BarChartIcon },
@@ -113,6 +125,7 @@ export function BusinessDashboard() {
       'plans': 'plans',
       'customers': 'customers',
       'subscriptions': 'subscriptions',
+      'active-subscribers': 'active-subscribers',
       'mandates': 'mandates',
       'transactions': 'transactions',
       'coupons': 'coupons',
@@ -159,6 +172,8 @@ export function BusinessDashboard() {
   const [mandatesPageSize, setMandatesPageSize] = useState(10);
   const [transactionsPage, setTransactionsPage] = useState(1);
   const [transactionsPageSize, setTransactionsPageSize] = useState(10);
+  const [activeSubsPage, setActiveSubsPage] = useState(1);
+  const [activeSubsPageSize, setActiveSubsPageSize] = useState(10);
 
   // Modal states
   const [createPlanModal, setCreatePlanModal] = useState(false);
@@ -176,6 +191,12 @@ export function BusinessDashboard() {
   // Webhooks from backend
   const [businessWebhooks, setBusinessWebhooks] = useState<WebhookResponse[]>([]);
   const [isLoadingWebhooks, setIsLoadingWebhooks] = useState(false);
+  // Active Subscribers
+  const [activeSubscribers, setActiveSubscribers] = useState<import('@/lib/api/subscriptions').ActiveSubscriberResponse[]>([]);
+  const [isLoadingActiveSubscribers, setIsLoadingActiveSubscribers] = useState(false);
+  const [activeSubsTotalPages, setActiveSubsTotalPages] = useState(1);
+  // Tier Info
+  const [tierInfo, setTierInfo] = useState<import('@/lib/api/serviceTiers').TierInfoResponse | null>(null);
 
   // Bank account settings states
   const [settBankCode, setSettBankCode] = useState('');
@@ -215,6 +236,37 @@ export function BusinessDashboard() {
   const [verificationModal, setVerificationModal] = useState(false);
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancellingMandate, setIsCancellingMandate] = useState(false);
+  const [isSavingCoupon, setIsSavingCoupon] = useState(false);
+  const [isDeletingCoupon, setIsDeletingCoupon] = useState(false);
+  const [isAddingWebhook, setIsAddingWebhook] = useState(false);
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+  const [upgradeModal, setUpgradeModal] = useState(false);
+  const [upgradeMessage, setUpgradeMessage] = useState('');
+  const [availableTiers, setAvailableTiers] = useState<any[]>([]);
+  const [selectedUpgradeTier, setSelectedUpgradeTier] = useState<any>(null);
+
+  const [upgradeConfirmModal, setUpgradeConfirmModal] = useState(false);
+  const [upgradeInProgress, setUpgradeInProgress] = useState(false);
+  const [tierUpgradeResult, setTierUpgradeResult] = useState<any>(null);
+  const [tierVerificationSheet, setTierVerificationSheet] = useState(false);
+  const [downgradeConfirmModal, setDowngradeConfirmModal] = useState(false);
+  const [downgradeInProgress, setDowngradeInProgress] = useState(false);
+  const [platformAccount, setPlatformAccount] = useState<any>(null);
+  const [tierPollingActive, setTierPollingActive] = useState(false);
+
+  // Email OTP verification states
+  const [emailOtpModal, setEmailOtpModal] = useState(false);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpMasked, setEmailOtpMasked] = useState('');
+  const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
+  const [isVerifyingEmailOtp, setIsVerifyingEmailOtp] = useState(false);
+  const [pendingCustomerData, setPendingCustomerData] = useState<any>(null);
+  const [customerStatusModal, setCustomerStatusModal] = useState(false);
+  const [customerStatusData, setCustomerStatusData] = useState<CustomerSubscriptionStatusResponse | null>(null);
+  const [isCheckingCustomerStatus, setIsCheckingCustomerStatus] = useState(false);
+  const [customerStatusName, setCustomerStatusName] = useState('');
+  const tierPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Selected items
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
@@ -382,6 +434,72 @@ export function BusinessDashboard() {
     } catch { /* ignore */ }
   };
 
+  // Fetch tier info and available tiers
+  useEffect(() => {
+    const fetchTierInfo = async () => {
+      if (!business?.businessId) return;
+      try {
+        const { businessTierApi: tierApi } = await import('@/lib/api/serviceTiers');
+        const info = await tierApi.getMyTier();
+        setTierInfo(info);
+      } catch { /* ignore - may not have permission */ }
+    };
+    const fetchAvailableTiers = async () => {
+      try {
+        const { businessTierApi: tierApi } = await import('@/lib/api/serviceTiers');
+        const tiers = await tierApi.listAvailableTiers();
+        setAvailableTiers(tiers.filter((t: any) => t.serviceTierStatus === 'ACTIVE'));
+      } catch { /* ignore */ }
+    };
+    const fetchPlatformAccount = async () => {
+      try {
+        const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+        const account = await tierUpgradeApi.getPlatformAccount();
+        setPlatformAccount(account);
+      } catch { /* ignore */ }
+    };
+    fetchTierInfo();
+    fetchAvailableTiers();
+    fetchPlatformAccount();
+  }, [business?.businessId]);
+
+  // Tier upgrade polling - poll status after "I have sent the money"
+  const stopTierPolling = useCallback(() => {
+    if (tierPollingRef.current) {
+      clearInterval(tierPollingRef.current);
+      tierPollingRef.current = null;
+    }
+    setTierPollingActive(false);
+  }, []);
+
+  const startTierPolling = useCallback(() => {
+    stopTierPolling();
+    setTierPollingActive(true);
+    tierPollingRef.current = setInterval(async () => {
+      try {
+        const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+        const status = await tierUpgradeApi.getStatus();
+        if (status.businessSubscriptionStatus === 'ACTIVE') {
+          // Update result with active status
+          setTierUpgradeResult((prev: any) => prev ? { ...prev, businessSubscriptionStatus: 'ACTIVE', mandateStatus: status.mandateStatus } : prev);
+          stopTierPolling();
+          toast.success('Your subscription has been activated!');
+          // Refresh tier info
+          const { businessTierApi: tierApi } = await import('@/lib/api/serviceTiers');
+          const info = await tierApi.getMyTier();
+          setTierInfo(info);
+        }
+      } catch {
+        // Silently retry on next interval
+      }
+    }, 15000); // Poll every 15 seconds
+  }, [stopTierPolling]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => stopTierPolling();
+  }, [stopTierPolling]);
+
   // Fetch coupons from backend
   useEffect(() => {
     const fetchCoupons = async () => {
@@ -439,6 +557,13 @@ export function BusinessDashboard() {
 
   // For features not yet implemented with API, use empty arrays
   const [businessTransactions, setBusinessTransactions] = useState<TransactionResponse[]>([]);
+
+  // Fetch active subscribers when section is active
+  useEffect(() => {
+    if (activeSection === 'active-subscribers') {
+      loadActiveSubscribers();
+    }
+  }, [activeSection, activeSubsPage, activeSubsPageSize]);
 
   // Fetch transactions
   useEffect(() => {
@@ -632,6 +757,17 @@ export function BusinessDashboard() {
     transactionsPage * transactionsPageSize
   );
 
+  // Tier limit helper - shows upgrade modal on 402 responses
+  const handleTierError = (error: any, fallbackMsg: string): boolean => {
+    if (error?.response?.status === 402) {
+      setUpgradeMessage(error.response.data?.message || 'You have reached your plan limit. Please upgrade to continue.');
+      setUpgradeModal(true);
+      return true;
+    }
+    toast.error(error?.response?.data?.message || error?.message || fallbackMsg);
+    return false;
+  };
+
   // Product handlers
   const handleCreateProduct = () => {
     setProductName('');
@@ -644,7 +780,7 @@ export function BusinessDashboard() {
     setSelectedProduct(product);
     setProductName(product.productName || '');
     setProductDescription(product.productDescription || '');
-    setProductAmount(product.productAmount != null ? String(product.productAmount) : '');
+    setProductAmount(product.productAmount != null ? formatAmountInput(String(product.productAmount)) : '');
     setEditProductModal(true);
   };
 
@@ -660,15 +796,14 @@ export function BusinessDashboard() {
       await productsApi.create({
         productName,
         productDescription: productDescription || undefined,
-        productAmount: productAmount ? parseFloat(productAmount) : undefined,
+        productAmount: productAmount ? parseFloat(stripCommas(productAmount)) : undefined,
         productBusinessId: business?.businessId || undefined,
       });
       toast.success(`Product "${productName}" has been created`);
       setCreateProductModal(false);
       refetchProducts();
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to create product';
-      toast.error(msg);
+      handleTierError(error, 'Failed to create product');
     } finally {
       setIsSubmitting(false);
     }
@@ -681,7 +816,7 @@ export function BusinessDashboard() {
       await productsApi.update(selectedProduct.productId, {
         productName,
         productDescription: productDescription || undefined,
-        productAmount: productAmount ? parseFloat(productAmount) : undefined,
+        productAmount: productAmount ? parseFloat(stripCommas(productAmount)) : undefined,
       });
       toast.success(`Product "${productName}" has been updated`);
       setEditProductModal(false);
@@ -717,7 +852,7 @@ export function BusinessDashboard() {
     if (product) {
       setPlanDescription(product.productDescription || '');
       if (product.productAmount != null) {
-        setPlanAmount(String(product.productAmount));
+        setPlanAmount(formatAmountInput(String(product.productAmount)));
       }
     }
   };
@@ -737,7 +872,7 @@ export function BusinessDashboard() {
     setSelectedPlan(plan);
     setPlanName(plan.planName || '');
     setPlanDescription(plan.planDescription || '');
-    setPlanAmount(plan.planAmount || '');
+    setPlanAmount(plan.planAmount ? formatAmountInput(plan.planAmount) : '');
     setPlanFrequency(plan.planBillingInterval || 'MONTHLY');
     setPlanTrialPeriod((plan.planTrialDays ?? '').toString());
     setEditPlanModal(true);
@@ -762,7 +897,7 @@ export function BusinessDashboard() {
       await plansApi.create({
         planName,
         planDescription: planDescription || undefined,
-        planAmount: planAmount,
+        planAmount: stripCommas(planAmount),
         planBillingInterval: intervalMap[planFrequency] || 'MONTHLY',
         planTrialDays: planTrialPeriod ? parseInt(planTrialPeriod) : undefined,
         planProductId: selectedProductId || undefined,
@@ -771,8 +906,7 @@ export function BusinessDashboard() {
       setCreatePlanModal(false);
       refetchPlans();
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to create plan';
-      toast.error(msg);
+      handleTierError(error, 'Failed to create plan');
     } finally {
       setIsSubmitting(false);
     }
@@ -785,7 +919,7 @@ export function BusinessDashboard() {
       await plansApi.update(selectedPlan.planId, {
         planName,
         planDescription: planDescription || undefined,
-        planAmount: planAmount,
+        planAmount: stripCommas(planAmount),
       });
       toast.success(`Plan "${planName}" has been updated`);
       setEditPlanModal(false);
@@ -816,6 +950,17 @@ export function BusinessDashboard() {
 
   // Customer handlers
   const handleAddCustomer = () => {
+    if (!tierInfo?.customerManagementEnabled) {
+      setUpgradeMessage('Customer management is not available on the FREE plan. Please upgrade your plan to add customers.');
+      setUpgradeModal(true);
+      return;
+    }
+    const max = tierInfo?.maxCustomers ?? 0;
+    if (max !== -1 && (tierInfo?.currentCustomers ?? 0) >= max) {
+      setUpgradeMessage(`You have reached your customer limit (${max}). Please upgrade your plan to add more customers.`);
+      setUpgradeModal(true);
+      return;
+    }
     setCustomerName('');
     setCustomerEmail('');
     setCustomerPhone('');
@@ -838,6 +983,21 @@ export function BusinessDashboard() {
   const handleDeleteCustomer = (customer: any) => {
     setSelectedCustomer(customer);
     setDeleteCustomerModal(true);
+  };
+
+  const handleCheckCustomerStatus = async (customer: any) => {
+    setCustomerStatusName(`${customer.customerFirstName || ''} ${customer.customerLastName || ''}`.trim());
+    setCustomerStatusModal(true);
+    setIsCheckingCustomerStatus(true);
+    setCustomerStatusData(null);
+    try {
+      const data = await subscriptionsApi.checkCustomerStatus(customer.customerId);
+      setCustomerStatusData(data);
+    } catch {
+      toast.error('Failed to check subscription status');
+    } finally {
+      setIsCheckingCustomerStatus(false);
+    }
   };
 
   const handleCustomerAccountNumberChange = async (value: string) => {
@@ -892,10 +1052,13 @@ export function BusinessDashboard() {
     setCustomerPlanId('');
     setApplyCouponCode('');
     setCouponValidation(null);
+    setEmailOtpCode('');
+    setEmailOtpMasked('');
+    setPendingCustomerData(null);
   };
 
   const confirmAddCustomer = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isSendingEmailOtp) return;
     // First validate basic required customer info
     if (!customerName.trim()) {
       toast.error('Please enter customer name');
@@ -912,9 +1075,7 @@ export function BusinessDashboard() {
       return;
     }
 
-    setIsSubmitting(true);
-
-    // Capture form values before resetting (for verification modal + background API calls)
+    // Capture form values before sending OTP
     const formEmail = customerEmail.trim();
     const formPhone = customerPhone;
     const formBankCode = customerBankCode;
@@ -928,12 +1089,76 @@ export function BusinessDashboard() {
     const nameParts = formName.split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || customerLastName || firstName;
-    const fullName = `${firstName} ${lastName}`.trim();
-    const selectedPlan = formPlanId ? businessPlans.find(p => p.planId === formPlanId) : null;
 
-    // If bank is linked, show the ₦50 verification modal IMMEDIATELY
+    // Store form data for after OTP verification
+    setPendingCustomerData({
+      formEmail, formPhone, formBankCode, formAccountNumber, formAccountName,
+      formPlanId, formCouponCode, formDiscountedAmount, formLinkBank,
+      formName, firstName, lastName,
+    });
+
+    // Send OTP to customer email
+    setIsSendingEmailOtp(true);
+    try {
+      const result = await customersApi.sendCustomerEmailOtp(formEmail);
+      setEmailOtpMasked(result.emailMasked);
+      setEmailOtpCode('');
+      setEmailOtpModal(true);
+      toast.success(`Verification code sent to ${result.emailMasked}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to send verification code');
+      setPendingCustomerData(null);
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
+  const handleResendEmailOtp = async () => {
+    if (!pendingCustomerData?.formEmail || isSendingEmailOtp) return;
+    setIsSendingEmailOtp(true);
+    try {
+      const result = await customersApi.sendCustomerEmailOtp(pendingCustomerData.formEmail);
+      setEmailOtpMasked(result.emailMasked);
+      setEmailOtpCode('');
+      toast.success('Verification code resent');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to resend verification code');
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    if (emailOtpCode.length !== 6 || !pendingCustomerData) return;
+    setIsVerifyingEmailOtp(true);
+    try {
+      await customersApi.verifyCustomerEmailOtp(pendingCustomerData.formEmail, emailOtpCode);
+      toast.success('Email verified successfully');
+      setEmailOtpModal(false);
+
+      // Proceed with actual customer creation
+      await proceedWithCustomerCreation(pendingCustomerData);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Invalid or expired verification code');
+      setEmailOtpCode('');
+    } finally {
+      setIsVerifyingEmailOtp(false);
+    }
+  };
+
+  const proceedWithCustomerCreation = async (data: any) => {
+    const {
+      formEmail, formPhone, formBankCode, formAccountNumber, formAccountName,
+      formPlanId, formCouponCode, formDiscountedAmount, formLinkBank,
+      formName, firstName, lastName,
+    } = data;
+    const fullName = `${firstName} ${lastName}`.trim();
+    const selectedPlan = formPlanId ? businessPlans.find((p: any) => p.planId === formPlanId) : null;
+
+    setIsSubmitting(true);
+
+    // If bank is linked, show the verification modal IMMEDIATELY
     if (formLinkBank && formBankCode && formAccountNumber && formPlanId) {
-      // Build mandate-like object from form data for the verification modal
       setSelectedMandate({
         mandateAccountNumber: formAccountNumber,
         mandateAccountName: formAccountName,
@@ -973,7 +1198,7 @@ export function BusinessDashboard() {
         });
 
         // Step 3: Create mandate with subscription ID and correct bank UUID
-        const bankEntry = banksList.find(b => b.bankCode === formBankCode);
+        const bankEntry = banksList.find((b: any) => b.bankCode === formBankCode);
         const bankUuid = bankEntry?.bankId;
         const mandateAmount = formDiscountedAmount != null ? formDiscountedAmount.toString() : (selectedPlan?.planAmount || '0');
 
@@ -1019,10 +1244,10 @@ export function BusinessDashboard() {
       }
       refetchCustomers();
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to add customer';
-      toast.error(msg);
+      handleTierError(error, 'Failed to add customer');
     } finally {
       setIsSubmitting(false);
+      setPendingCustomerData(null);
     }
   };
 
@@ -1105,15 +1330,29 @@ export function BusinessDashboard() {
     setCancelMandateModal(true);
   };
 
+  const handleActivateMandate = async (mandate: any) => {
+    if (!mandate?.mandateId) return;
+    try {
+      await billingApi.activateMandate(mandate.mandateId);
+      toast.success('Mandate has been activated');
+      refetchMandates();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to activate mandate');
+    }
+  };
+
   const confirmCancelMandate = async () => {
     if (!selectedMandate?.mandateId) return;
+    setIsCancellingMandate(true);
     try {
-      await billingApi.updateMandate(selectedMandate.mandateId, { mandateStatus: 'CANCELLED' });
+      await billingApi.cancelMandate(selectedMandate.mandateId);
       toast.success('Mandate has been cancelled');
       setCancelMandateModal(false);
       refetchMandates();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to cancel mandate');
+    } finally {
+      setIsCancellingMandate(false);
     }
   };
 
@@ -1260,7 +1499,7 @@ ${business.businessName}`;
     setSelectedCoupon(coupon);
     setCouponCode(coupon.couponCode || '');
     setCouponType(coupon.couponType || 'Percentage');
-    setCouponValue(coupon.couponValue || '');
+    setCouponValue(coupon.couponValue ? formatAmountInput(coupon.couponValue) : '');
     setCouponLimit((coupon.couponMaxRedemptions || '').toString());
     setCouponValidTo(coupon.couponValidUntil ? coupon.couponValidUntil.split('T')[0] : '');
     setEditCouponModal(true);
@@ -1272,12 +1511,13 @@ ${business.businessName}`;
   };
 
   const confirmCreateCoupon = async () => {
+    setIsSavingCoupon(true);
     try {
       await couponsApi.create({
         couponCode: couponCode,
         couponName: couponCode,
         couponType: couponType,
-        couponValue: couponValue,
+        couponValue: stripCommas(couponValue),
         couponMaxRedemptions: parseInt(couponLimit) || 100,
         couponValidUntil: couponValidTo ? `${couponValidTo}T23:59:59` : undefined,
         couponStatus: 'ACTIVE',
@@ -1287,17 +1527,20 @@ ${business.businessName}`;
       refetchCoupons();
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to create coupon');
+    } finally {
+      setIsSavingCoupon(false);
     }
   };
 
   const confirmEditCoupon = async () => {
     if (!selectedCoupon?.couponId) return;
+    setIsSavingCoupon(true);
     try {
       await couponsApi.update(selectedCoupon.couponId, {
         couponCode: couponCode,
         couponName: couponCode,
         couponType: couponType,
-        couponValue: couponValue,
+        couponValue: stripCommas(couponValue),
         couponMaxRedemptions: parseInt(couponLimit) || undefined,
         couponValidUntil: couponValidTo ? `${couponValidTo}T23:59:59` : undefined,
       });
@@ -1306,11 +1549,14 @@ ${business.businessName}`;
       refetchCoupons();
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to update coupon');
+    } finally {
+      setIsSavingCoupon(false);
     }
   };
 
   const confirmDeleteCoupon = async () => {
     if (!selectedCoupon?.couponId) return;
+    setIsDeletingCoupon(true);
     try {
       await couponsApi.delete(selectedCoupon.couponId);
       toast.success(`Coupon "${selectedCoupon?.couponCode}" has been deleted`);
@@ -1318,6 +1564,8 @@ ${business.businessName}`;
       refetchCoupons();
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to delete coupon');
+    } finally {
+      setIsDeletingCoupon(false);
     }
   };
 
@@ -1382,6 +1630,7 @@ ${business.businessName}`;
       toast.error('Please enter a webhook URL');
       return;
     }
+    setIsAddingWebhook(true);
     try {
       await webhooksApi.create({
         webhookUrl,
@@ -1393,17 +1642,22 @@ ${business.businessName}`;
       setAddWebhookModal(false);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to add webhook');
+    } finally {
+      setIsAddingWebhook(false);
     }
   };
 
   const confirmTestWebhook = async () => {
     if (!selectedWebhook) return;
+    setIsTestingWebhook(true);
     try {
       await webhooksApi.test(selectedWebhook.webhookId);
       toast.success('Test event sent successfully');
       setTestWebhookModal(false);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to send test event');
+    } finally {
+      setIsTestingWebhook(false);
     }
   };
 
@@ -1545,6 +1799,34 @@ ${business.businessName}`;
           </CardContent>
         </Card>
       </div>
+
+      {/* Current Plan Card */}
+      <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-white">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-purple-100 text-purple-600">
+                <TrendingUpIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current Plan</p>
+                <p className="text-xl font-bold text-foreground">{tierInfo?.tierName || 'FREE'}</p>
+                <p className="text-sm text-muted-foreground">
+                  {tierInfo?.customerManagementEnabled
+                    ? `${tierInfo.currentCustomers}/${tierInfo.maxCustomers === -1 ? '∞' : tierInfo.maxCustomers} customers · ${tierInfo.currentMandates}/${tierInfo.maxMandates === -1 ? '∞' : tierInfo.maxMandates} mandates`
+                    : 'Upgrade to add customers and use NDD services'}
+                </p>
+              </div>
+            </div>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+              onClick={() => handleSectionChange('settings')}
+            >
+              {tierInfo?.subscriptionStatus === 'ACTIVE' ? 'Manage Plan' : 'Upgrade Plan'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Revenue Growth Chart - Full Width */}
       <Card className="">
@@ -1692,7 +1974,7 @@ ${business.businessName}`;
           <Button variant="outline" onClick={() => { refetchProducts(); toast.info('Refreshing products...'); }}>
             <RefreshIcon className="h-4 w-4" />
           </Button>
-          <Button onClick={handleCreateProduct} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+          <Button onClick={handleCreateProduct} className="bg-purple-600 hover:bg-purple-700 transition-colors duration-200 shadow-sm">
             <PlusIcon className="h-4 w-4 mr-2" />
             Add Product
           </Button>
@@ -1791,7 +2073,7 @@ ${business.businessName}`;
           <Button variant="outline" onClick={() => refetchPlans()} disabled={plansLoading}>
             <RefreshIcon className={`h-4 w-4 ${plansLoading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button onClick={handleCreatePlan} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+          <Button onClick={handleCreatePlan} className="bg-purple-600 hover:bg-purple-700 transition-colors duration-200 shadow-sm">
             <PlusIcon className="h-4 w-4 mr-2" />
             Create Plan
           </Button>
@@ -1873,7 +2155,7 @@ ${business.businessName}`;
           <Button variant="outline" onClick={() => refetchCustomers()} disabled={customersLoading}>
             <RefreshIcon className={`h-4 w-4 ${customersLoading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button onClick={handleAddCustomer} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+          <Button onClick={handleAddCustomer} className="bg-purple-600 hover:bg-purple-700 transition-colors duration-200 shadow-sm">
             <UserPlusIcon className="h-4 w-4 mr-2" />
             Add Customer
           </Button>
@@ -1919,6 +2201,10 @@ ${business.businessName}`;
                             <EditIcon className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleCheckCustomerStatus(customer)}>
+                            <TrendingUpIcon className="h-4 w-4 mr-2" />
+                            Check Subscription
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleSendVerificationForCustomer(customer)}>
                             <ShareIcon className="h-4 w-4 mr-2" />
                             Send Verification
@@ -1958,6 +2244,101 @@ ${business.businessName}`;
         </CardContent>
       </Card>
     </div>
+  );
+
+  // Active Subscribers Section Component
+  const loadActiveSubscribers = async () => {
+    setIsLoadingActiveSubscribers(true);
+    try {
+      const res = await subscriptionsApi.getActiveSubscribers(activeSubsPage - 1, activeSubsPageSize);
+      setActiveSubscribers(res.content);
+      setActiveSubsTotalPages(res.totalPages);
+    } catch {
+      toast.error('Failed to load active subscribers');
+    } finally {
+      setIsLoadingActiveSubscribers(false);
+    }
+  };
+
+  const ActiveSubscribersSection = () => (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Active Subscribers</h2>
+            <p className="text-sm text-muted-foreground mt-1">Customers currently paying or in trial</p>
+          </div>
+          <Button variant="outline" onClick={loadActiveSubscribers} disabled={isLoadingActiveSubscribers}>
+            <RefreshIcon className={`h-4 w-4 ${isLoadingActiveSubscribers ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            {isLoadingActiveSubscribers && activeSubscribers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Loading active subscribers...</div>
+            ) : activeSubscribers.length === 0 ? (
+              <EmptyState
+                icon={TrendingUpIcon}
+                title="No active subscribers yet"
+                description="Active and trialing subscribers will appear here once customers subscribe to your plans."
+              />
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Subscription Plan</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                        <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Next Billing</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Mandate</th>
+                        <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Started</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeSubscribers.map((sub) => (
+                        <tr key={sub.subscriptionId} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
+                          <td className="py-4 px-4 font-medium text-foreground">{sub.customerName || 'N/A'}</td>
+                          <td className="py-4 px-4 text-sm text-muted-foreground">{sub.customerEmail || 'N/A'}</td>
+                          <td className="py-4 px-4 text-sm text-muted-foreground">{sub.productName ? `${sub.productName} - ${sub.planName}` : sub.planName || 'N/A'}</td>
+                          <td className="py-4 px-4">
+                            <StatusBadge status={sub.subscriptionStatus || 'UNKNOWN'} type="subscription" />
+                          </td>
+                          <td className="py-4 px-4 text-sm font-mono text-foreground text-right">
+                            {sub.planAmount ? `₦${Number(sub.planAmount).toLocaleString()}` : 'N/A'}
+                          </td>
+                          <td className="py-4 px-4 text-sm text-muted-foreground">
+                            {sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="py-4 px-4">
+                            {(() => {
+                              const mandate = businessMandates.find((m: any) => m.mandateSubscriptionId === sub.subscriptionId);
+                              return <StatusBadge status={mandate?.mandateStatus || 'N/A'} type="mandate" />;
+                            })()}
+                          </td>
+                          <td className="py-4 px-4 text-sm text-muted-foreground">
+                            {sub.subscriptionStartDate ? new Date(sub.subscriptionStartDate).toLocaleDateString() : 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <TablePagination
+                  currentPage={activeSubsPage}
+                  totalPages={activeSubsTotalPages}
+                  pageSize={activeSubsPageSize}
+                  totalItems={activeSubscribers.length}
+                  onPageChange={setActiveSubsPage}
+                  onPageSizeChange={setActiveSubsPageSize}
+                />
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
   );
 
   // Subscriptions Section Component
@@ -2001,7 +2382,10 @@ ${business.businessName}`;
                       {sub.subscriptionCurrentPeriodEnd ? new Date(sub.subscriptionCurrentPeriodEnd).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="py-4 px-4">
-                      <StatusBadge status="N/A" type="mandate" />
+                      {(() => {
+                        const mandate = businessMandates.find((m: any) => m.mandateSubscriptionId === sub.subscriptionId);
+                        return <StatusBadge status={mandate?.mandateStatus || 'N/A'} type="mandate" />;
+                      })()}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <DropdownMenu>
@@ -2015,6 +2399,20 @@ ${business.businessName}`;
                             <EyeIcon className="h-4 w-4 mr-2" />
                             View Details
                           </DropdownMenuItem>
+                          {(sub.subscriptionStatus === 'PENDING_ACTIVATION' || sub.subscriptionStatus === 'TRIALING') && (
+                            <DropdownMenuItem className="text-green-600" onClick={async () => {
+                              try {
+                                await subscriptionsApi.activate(sub.subscriptionId);
+                                toast.success('Subscription activated successfully');
+                                refetchSubscriptions();
+                              } catch (err: any) {
+                                toast.error(err?.response?.data?.message || 'Failed to activate');
+                              }
+                            }}>
+                              <CheckIcon className="h-4 w-4 mr-2" />
+                              Activate
+                            </DropdownMenuItem>
+                          )}
                           {(sub.subscriptionStatus === 'ACTIVE' || sub.subscriptionStatus === 'TRIALING') && (
                             <DropdownMenuItem className="text-red-600" onClick={() => handleCancelSubscription(sub)}>
                               <BanIcon className="h-4 w-4 mr-2" />
@@ -2119,6 +2517,12 @@ ${business.businessName}`;
                             <ShareIcon className="h-4 w-4 mr-2" />
                             Send Verification
                           </DropdownMenuItem>
+                          {mandate.mandateStatus === 'PENDING' && (
+                            <DropdownMenuItem className="text-green-600" onClick={() => handleActivateMandate(mandate)}>
+                              <CheckIcon className="h-4 w-4 mr-2" />
+                              Activate Mandate
+                            </DropdownMenuItem>
+                          )}
                           {mandate.mandateStatus === 'ACTIVE' && (
                             <DropdownMenuItem className="text-red-600" onClick={() => handleCancelMandate(mandate)}>
                               <BanIcon className="h-4 w-4 mr-2" />
@@ -2217,7 +2621,7 @@ ${business.businessName}`;
           <Button variant="outline" onClick={() => { refetchCoupons(); toast.info('Refreshing coupons...'); }}>
             <RefreshIcon className="h-4 w-4" />
           </Button>
-          <Button onClick={handleCreateCoupon} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+          <Button onClick={handleCreateCoupon} className="bg-purple-600 hover:bg-purple-700 transition-colors duration-200 shadow-sm">
             <PlusIcon className="h-4 w-4 mr-2" />
             Create Coupon
           </Button>
@@ -2322,7 +2726,7 @@ ${business.businessName}`;
           <Button variant="outline" onClick={() => { refetchWebhooks(); toast.info('Refreshing webhooks...'); }}>
             <RefreshIcon className="h-4 w-4" />
           </Button>
-          <Button onClick={handleAddWebhook} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
+          <Button onClick={handleAddWebhook} className="bg-purple-600 hover:bg-purple-700 transition-colors duration-200 shadow-sm">
             <PlusIcon className="h-4 w-4 mr-2" />
             Add Webhook
           </Button>
@@ -2413,97 +2817,105 @@ ${business.businessName}`;
       {/* Section Header */}
       <div>
         <h2 className="text-2xl font-bold text-foreground">Settings</h2>
-        <p className="text-sm text-muted-foreground mt-1">Manage team members and account settings</p>
+        <p className="text-sm text-muted-foreground mt-1">Manage account settings</p>
       </div>
 
-      {/* Team Members - Full Width */}
-      <Card className="">
+      {/* Plan & Billing */}
+      <Card>
         <CardHeader>
-          <div className="flex items-center justify-between mb-4">
-            <CardTitle className="text-foreground">Team Members</CardTitle>
-            <Button onClick={handleInviteTeam} className="bg-primary hover:bg-primary/90 transition-colors duration-200 shadow-sm">
-              <UserPlusIcon className="h-4 w-4 mr-2" />
-              Invite Member
-            </Button>
-          </div>
-          <div className="relative max-w-md">
-            <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search team members..."
-              value={teamSearchQuery}
-              onChange={(e) => setTeamSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+          <CardTitle className="text-foreground">Plan & Billing</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Current plan: <span className="font-semibold">{tierInfo?.tierName || 'FREE'}</span>
+            {tierInfo?.subscriptionStatus === 'ACTIVE' && tierInfo?.currentPeriodEnd && (
+              <> · Next billing: {new Date(tierInfo.currentPeriodEnd).toLocaleDateString()}</>
+            )}
+            {tierInfo?.subscriptionStatus === 'PENDING_MANDATE' && (
+              <> · <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 ml-1">Pending Activation</Badge></>
+            )}
+            {tierInfo?.subscriptionStatus === 'PAST_DUE' && (
+              <> · <Badge className="bg-red-100 text-red-800 border-red-200 ml-1">Past Due</Badge></>
+            )}
+          </p>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Active</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedTeamMembers.map((member) => (
-                  <tr key={member.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors duration-150">
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm flex-shrink-0">
-                          {member.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div className="font-medium text-foreground">{member.name}</div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm text-muted-foreground">{member.email}</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm font-medium text-foreground">{member.role}</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <StatusBadge status={member.status} type="general" />
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm text-muted-foreground">{member.lastActive}</div>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreVerticalIcon className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEditTeamMember(member)}>
-                            <EditIcon className="h-4 w-4 mr-2" />
-                            Change Role
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600" onClick={() => handleRemoveTeamMember(member)}>
-                            <TrashIcon className="h-4 w-4 mr-2" />
-                            Remove
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Tier Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {availableTiers
+              .sort((a: any, b: any) => (a.serviceTierSortOrder ?? 0) - (b.serviceTierSortOrder ?? 0))
+              .map((tier: any) => {
+                const price = tier.serviceTierMonthlyPrice;
+                const isCurrentTier = tierInfo?.tierId
+                  ? tierInfo.tierId === tier.serviceTierId
+                  : tier.serviceTierName?.toUpperCase() === (tierInfo?.tierName || 'FREE').toUpperCase();
+                const isFree = parseFloat(price || '0') === 0;
+                const currentSortOrder = tierInfo?.tierId
+                  ? availableTiers.find((t: any) => t.serviceTierId === tierInfo.tierId)?.serviceTierSortOrder ?? 0
+                  : -1; // FREE has no tier row, treat as lowest
+                const tierSortOrder = tier.serviceTierSortOrder ?? 0;
+                const isDowngrade = tierSortOrder < currentSortOrder || (isFree && tierInfo?.tierId);
+                return (
+                  <div
+                    key={tier.serviceTierId}
+                    className={`relative flex flex-col rounded-xl border-2 p-5 transition-all ${isCurrentTier ? 'border-purple-500 bg-purple-50/50' : tier.serviceTierIsPopular ? 'border-purple-300' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    {tier.serviceTierIsPopular && (
+                      <Badge className="absolute -top-2.5 left-4 bg-purple-600 text-white text-xs">Popular</Badge>
+                    )}
+                    {isCurrentTier && (
+                      <Badge className="absolute -top-2.5 right-4 bg-green-600 text-white text-xs">Current</Badge>
+                    )}
+                    <h3 className="font-bold text-lg text-foreground">{tier.serviceTierName}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{tier.serviceTierDescription || ''}</p>
+                    <div className="mt-3">
+                      <span className="text-2xl font-bold text-foreground">{isFree ? 'Free' : formatPrice(price)}</span>
+                      {!isFree && <span className="text-sm text-muted-foreground">/mo</span>}
+                    </div>
+                    <ul className="mt-3 space-y-1 text-sm text-muted-foreground flex-1">
+                      <li>Customers: {formatLimit(tier.serviceTierMaxCustomers)}</li>
+                      <li>Mandates: {formatLimit(tier.serviceTierMaxMandates)}</li>
+                      <li>Products: {formatLimit(tier.serviceTierMaxProducts)}</li>
+                      <li>Subscriptions: {formatLimit(tier.serviceTierMaxSubscriptions)}</li>
+                      {tier.serviceTierNddEnabled && <li className="text-green-600 font-medium">NDD Enabled</li>}
+                      {tier.serviceTierAllowCustomerManagement && <li className="text-green-600 font-medium">Customer Management</li>}
+                    </ul>
+                    <div className="mt-4">
+                      {isCurrentTier ? (
+                        <Button disabled className="w-full" variant="outline">Current Plan</Button>
+                      ) : isFree && tierInfo?.tierId ? (
+                        <Button
+                          className="w-full"
+                          variant="destructive"
+                          onClick={() => setDowngradeConfirmModal(true)}
+                        >
+                          Downgrade to Free
+                        </Button>
+                      ) : isDowngrade ? (
+                        <Button
+                          className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedUpgradeTier(tier);
+                            setUpgradeConfirmModal(true);
+                          }}
+                        >
+                          Downgrade
+                        </Button>
+                      ) : (
+                        <Button
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                          onClick={() => {
+                            setSelectedUpgradeTier(tier);
+                            setUpgradeConfirmModal(true);
+                          }}
+                        >
+                          {tierInfo?.tierId ? 'Upgrade' : 'Upgrade'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
-          <TablePagination
-            currentPage={teamPage}
-            totalPages={teamTotalPages}
-            pageSize={teamPageSize}
-            totalItems={filteredTeamMembers.length}
-            onPageChange={setTeamPage}
-            onPageSizeChange={setTeamPageSize}
-          />
         </CardContent>
       </Card>
 
@@ -2582,7 +2994,7 @@ ${business.businessName}`;
             <div className="md:col-span-2">
               <Button
                 disabled={!settBankCode || !settAccountNumber || !settAccountName || isSavingBankAccount}
-                className="bg-primary hover:bg-primary/90"
+                className="bg-purple-600 hover:bg-purple-700"
                 onClick={async () => {
                   if (!business?.businessId) return;
                   setIsSavingBankAccount(true);
@@ -2661,6 +3073,8 @@ ${business.businessName}`;
         return <CustomersSection />;
       case 'subscriptions':
         return <SubscriptionsSection />;
+      case 'active-subscribers':
+        return <ActiveSubscribersSection />;
       case 'mandates':
         return <MandatesSection />;
       case 'transactions':
@@ -2686,7 +3100,7 @@ ${business.businessName}`;
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200">
                 <span className="text-sm font-medium text-foreground">{user?.firstName} {user?.lastName}</span>
-                <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold shadow-sm cursor-pointer">
+                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-semibold shadow-sm cursor-pointer">
                   {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
                 </div>
               </button>
@@ -2803,10 +3217,11 @@ ${business.businessName}`;
                 <Label htmlFor="plan-amount">Amount (₦)</Label>
                 <Input
                   id="plan-amount"
-                  type="number"
-                  placeholder="e.g., 5000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 5,000"
                   value={planAmount}
-                  onChange={(e) => setPlanAmount(e.target.value)}
+                  onChange={(e) => setPlanAmount(formatAmountInput(e.target.value))}
                   className="mt-1"
                   disabled={!!(selectedProductId && products.find(p => p.productId === selectedProductId)?.productAmount)}
                 />
@@ -2844,7 +3259,7 @@ ${business.businessName}`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreatePlanModal(false)}>Cancel</Button>
-            <Button onClick={confirmCreatePlan} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Plan'}</Button>
+            <Button onClick={confirmCreatePlan} className="bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Plan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2883,10 +3298,11 @@ ${business.businessName}`;
                 <Label htmlFor="edit-plan-amount">Amount (₦)</Label>
                 <Input
                   id="edit-plan-amount"
-                  type="number"
-                  placeholder="e.g., 5000"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g., 5,000"
                   value={planAmount}
-                  onChange={(e) => setPlanAmount(e.target.value)}
+                  onChange={(e) => setPlanAmount(formatAmountInput(e.target.value))}
                   className="mt-1"
                 />
               </div>
@@ -2920,7 +3336,7 @@ ${business.businessName}`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPlanModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditPlan} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Plan'}</Button>
+            <Button onClick={confirmEditPlan} className="bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Plan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3247,12 +3663,176 @@ ${business.businessName}`;
             }}>
               Cancel
             </Button>
-            <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmAddCustomer} disabled={isSubmitting}>
-              {isSubmitting ? 'Processing...' : linkBankAccount ? 'Add & Continue' : 'Send Invite'}
+            <Button className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={confirmAddCustomer} disabled={isSubmitting || isSendingEmailOtp}>
+              {isSendingEmailOtp ? 'Sending Code...' : isSubmitting ? 'Processing...' : linkBankAccount ? 'Add & Continue' : 'Send Invite'}
             </Button>
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Customer Subscription Status Dialog */}
+      <Dialog open={customerStatusModal} onOpenChange={setCustomerStatusModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Subscription Status</DialogTitle>
+            <DialogDescription>
+              {customerStatusName ? `Checking subscriptions for ${customerStatusName}` : 'Customer subscription status'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {isCheckingCustomerStatus ? (
+              <div className="text-center py-8 text-muted-foreground">Checking subscription status...</div>
+            ) : customerStatusData ? (
+              <div className="space-y-4">
+                <div className={`flex items-center gap-3 p-4 rounded-xl border ${customerStatusData.isSubscribed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center ${customerStatusData.isSubscribed ? 'bg-green-100' : 'bg-gray-100'}`}>
+                    <TrendingUpIcon className={`h-5 w-5 ${customerStatusData.isSubscribed ? 'text-green-600' : 'text-gray-400'}`} />
+                  </div>
+                  <div>
+                    <p className={`font-semibold ${customerStatusData.isSubscribed ? 'text-green-900' : 'text-gray-700'}`}>
+                      {customerStatusData.isSubscribed ? 'Active Subscriber' : 'Not Subscribed'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {customerStatusData.totalActive} active subscription{customerStatusData.totalActive !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+
+                {customerStatusData.subscriptions.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Active Plans</h4>
+                    {customerStatusData.subscriptions.map((sub: any) => (
+                      <div key={sub.subscriptionId} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                        <div>
+                          <p className="font-medium text-foreground">{sub.planName || 'Unknown Plan'}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Started {sub.startDate ? new Date(sub.startDate).toLocaleDateString() : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="text-right flex items-center gap-2">
+                          <div>
+                            <p className="font-mono font-medium text-foreground">
+                              {sub.planAmount ? `₦${Number(sub.planAmount).toLocaleString()}` : 'N/A'}
+                            </p>
+                            <StatusBadge status={sub.status || 'UNKNOWN'} type="subscription" />
+                          </div>
+                          {(sub.status === 'PENDING_ACTIVATION' || sub.status === 'TRIALING') && sub.subscriptionId && (
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white ml-2"
+                              onClick={async () => {
+                                try {
+                                  await subscriptionsApi.activate(sub.subscriptionId);
+                                  toast.success('Subscription activated successfully');
+                                  // Refresh the status data
+                                  if (customerStatusData?.customerId) {
+                                    const updated = await subscriptionsApi.checkCustomerStatus(customerStatusData.customerId);
+                                    setCustomerStatusData(updated);
+                                  }
+                                  refetchSubscriptions();
+                                } catch (err: any) {
+                                  toast.error(err?.response?.data?.message || 'Failed to activate subscription');
+                                }
+                              }}
+                            >
+                              Activate
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">No data available</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustomerStatusModal(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email OTP Verification Dialog */}
+      <Dialog open={emailOtpModal} onOpenChange={(open) => {
+        if (!open) {
+          setEmailOtpModal(false);
+          setEmailOtpCode('');
+          setPendingCustomerData(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Verify Customer Email</DialogTitle>
+            <DialogDescription>
+              A 6-digit verification code has been sent to <strong>{emailOtpMasked}</strong>.
+              Please ask the customer to check their email and share the code with you.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+              <div className="flex gap-3">
+                <MailIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-purple-900">
+                  <p className="font-medium mb-1">Email Verification Required</p>
+                  <p className="text-purple-800">
+                    Enter the 6-digit code the customer received at {emailOtpMasked} to verify their email address before creating their account.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center py-4">
+              <InputOTP
+                maxLength={6}
+                value={emailOtpCode}
+                onChange={setEmailOtpCode}
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} className="h-12 w-12 text-lg" />
+                  <InputOTPSlot index={1} className="h-12 w-12 text-lg" />
+                  <InputOTPSlot index={2} className="h-12 w-12 text-lg" />
+                  <InputOTPSlot index={3} className="h-12 w-12 text-lg" />
+                  <InputOTPSlot index={4} className="h-12 w-12 text-lg" />
+                  <InputOTPSlot index={5} className="h-12 w-12 text-lg" />
+                </InputOTPGroup>
+              </InputOTP>
+
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500">
+                  Didn't receive the code?{' '}
+                  <button
+                    onClick={handleResendEmailOtp}
+                    disabled={isSendingEmailOtp}
+                    className="text-purple-600 hover:text-purple-700 font-medium disabled:opacity-50"
+                  >
+                    {isSendingEmailOtp ? 'Sending...' : 'Resend Code'}
+                  </button>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-3 sm:gap-3">
+            <Button variant="outline" onClick={() => {
+              setEmailOtpModal(false);
+              setEmailOtpCode('');
+              setPendingCustomerData(null);
+            }} disabled={isVerifyingEmailOtp}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700"
+              onClick={handleVerifyEmailOtp}
+              disabled={emailOtpCode.length !== 6 || isVerifyingEmailOtp}
+            >
+              {isVerifyingEmailOtp ? 'Verifying...' : 'Verify & Continue'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View Customer Modal */}
       <Dialog open={viewCustomerModal} onOpenChange={setViewCustomerModal}>
@@ -3341,7 +3921,7 @@ ${business.businessName}`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditCustomerModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditCustomer} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Customer'}</Button>
+            <Button onClick={confirmEditCustomer} className="bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Customer'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3495,8 +4075,8 @@ ${business.businessName}`;
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelMandateModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmCancelMandate}>Cancel Mandate</Button>
+            <Button variant="outline" onClick={() => setCancelMandateModal(false)} disabled={isCancellingMandate}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmCancelMandate} disabled={isCancellingMandate}>{isCancellingMandate ? 'Cancelling...' : 'Cancel Mandate'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3538,10 +4118,11 @@ ${business.businessName}`;
                 </Label>
                 <Input
                   id="coupon-value"
-                  type="number"
-                  placeholder={couponType === 'Percentage' ? 'e.g., 20' : 'e.g., 1000'}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={couponType === 'Percentage' ? 'e.g., 20' : 'e.g., 1,000'}
                   value={couponValue}
-                  onChange={(e) => setCouponValue(e.target.value)}
+                  onChange={(e) => setCouponValue(couponType === 'Fixed' ? formatAmountInput(e.target.value) : e.target.value.replace(/[^\d.]/g, ''))}
                   className="mt-1"
                 />
               </div>
@@ -3571,8 +4152,8 @@ ${business.businessName}`;
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateCouponModal(false)}>Cancel</Button>
-            <Button onClick={confirmCreateCoupon} className="bg-green-600 hover:bg-green-700">Create Coupon</Button>
+            <Button variant="outline" onClick={() => setCreateCouponModal(false)} disabled={isSavingCoupon}>Cancel</Button>
+            <Button onClick={confirmCreateCoupon} className="bg-purple-600 hover:bg-purple-700" disabled={isSavingCoupon}>{isSavingCoupon ? 'Creating...' : 'Create Coupon'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3614,10 +4195,11 @@ ${business.businessName}`;
                 </Label>
                 <Input
                   id="edit-coupon-value"
-                  type="number"
-                  placeholder={couponType === 'Percentage' ? 'e.g., 20' : 'e.g., 1000'}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={couponType === 'Percentage' ? 'e.g., 20' : 'e.g., 1,000'}
                   value={couponValue}
-                  onChange={(e) => setCouponValue(e.target.value)}
+                  onChange={(e) => setCouponValue(couponType === 'Fixed' ? formatAmountInput(e.target.value) : e.target.value.replace(/[^\d.]/g, ''))}
                   className="mt-1"
                 />
               </div>
@@ -3647,8 +4229,8 @@ ${business.businessName}`;
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCouponModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditCoupon} className="bg-green-600 hover:bg-green-700">Update Coupon</Button>
+            <Button variant="outline" onClick={() => setEditCouponModal(false)} disabled={isSavingCoupon}>Cancel</Button>
+            <Button onClick={confirmEditCoupon} className="bg-purple-600 hover:bg-purple-700" disabled={isSavingCoupon}>{isSavingCoupon ? 'Updating...' : 'Update Coupon'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3663,98 +4245,399 @@ ${business.businessName}`;
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteCouponModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDeleteCoupon}>Delete Coupon</Button>
+            <Button variant="outline" onClick={() => setDeleteCouponModal(false)} disabled={isDeletingCoupon}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteCoupon} disabled={isDeletingCoupon}>{isDeletingCoupon ? 'Deleting...' : 'Delete Coupon'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Invite Team Member Modal */}
-      <Dialog open={inviteTeamModal} onOpenChange={setInviteTeamModal}>
+      {/* Upgrade Plan Modal */}
+      <Dialog open={upgradeModal} onOpenChange={setUpgradeModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite Team Member</DialogTitle>
-            <DialogDescription>Send an invitation to a new team member</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="team-email">Email Address</Label>
-              <Input
-                id="team-email"
-                type="email"
-                placeholder="e.g., team@example.com"
-                value={teamMemberEmail}
-                onChange={(e) => setTeamMemberEmail(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="team-role">Role</Label>
-              <Select value={teamMemberRole} onValueChange={setTeamMemberRole}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Manager">Manager</SelectItem>
-                  <SelectItem value="Support">Support</SelectItem>
-                  <SelectItem value="Developer">Developer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteTeamModal(false)}>Cancel</Button>
-            <Button onClick={confirmInviteTeam} className="bg-green-600 hover:bg-green-700">Send Invitation</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Team Member Modal */}
-      <Dialog open={editTeamMemberModal} onOpenChange={setEditTeamMemberModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Change Team Member Role</DialogTitle>
-            <DialogDescription>Update the role for {selectedTeamMember?.name || 'team member'}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="edit-team-role">Role</Label>
-              <Select value={teamMemberRole} onValueChange={setTeamMemberRole}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Manager">Manager</SelectItem>
-                  <SelectItem value="Support">Support</SelectItem>
-                  <SelectItem value="Developer">Developer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTeamMemberModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditTeamMember} className="bg-green-600 hover:bg-green-700">Update Role</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Remove Team Member Modal */}
-      <Dialog open={removeTeamMemberModal} onOpenChange={setRemoveTeamMemberModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove Team Member</DialogTitle>
+            <DialogTitle>Upgrade Your Plan</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedTeamMember?.name || 'this member'} from your team?
+              {upgradeMessage}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg">
+            <TrendingUpIcon className="h-8 w-8 text-purple-600 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-foreground">You&apos;re on the {tierInfo?.tierName || 'FREE'} plan</p>
+              <p className="text-sm text-muted-foreground">Upgrade to unlock higher limits and more features.</p>
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveTeamMemberModal(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmRemoveTeamMember}>Remove Member</Button>
+            <Button variant="outline" onClick={() => setUpgradeModal(false)}>Cancel</Button>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+              onClick={() => { setUpgradeModal(false); handleSectionChange('settings'); }}
+            >
+              View Plans
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Upgrade Confirmation Modal */}
+      <Dialog open={upgradeConfirmModal} onOpenChange={setUpgradeConfirmModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Tier Upgrade</DialogTitle>
+            <DialogDescription>
+              You are about to upgrade to the <span className="font-semibold">{selectedUpgradeTier?.serviceTierName}</span> plan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-between p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-muted-foreground">Plan</span>
+              <span className="font-medium">{selectedUpgradeTier?.serviceTierName}</span>
+            </div>
+            <div className="flex justify-between p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-muted-foreground">Monthly Amount</span>
+              <span className="font-bold text-lg">
+                {formatPrice(selectedUpgradeTier?.serviceTierMonthlyPrice)}
+              </span>
+            </div>
+
+            {/* Your Account (Source) */}
+            <div className="p-3 rounded-lg border bg-card">
+              <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Your Account (Transfer From)</p>
+              {business?.businessAccountNumber ? (
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Bank</span>
+                    <span className="font-medium">{settBanksList.find(b => b.bankCode === business?.businessBankCode)?.bankName || business?.businessBankCode}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Account</span>
+                    <span className="flex items-center gap-1">
+                      <span className="font-mono font-medium">{business.businessAccountNumber}</span>
+                      <button onClick={() => { navigator.clipboard.writeText(business.businessAccountNumber); toast.success('Copied!'); }} className="text-muted-foreground hover:text-foreground"><CopyIcon className="h-3 w-3" /></button>
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Name</span>
+                    <span className="font-medium">{business.businessAccountName || business.businessName}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-amber-600">No bank account set. Please add one in Settings first.</p>
+              )}
+            </div>
+
+            {/* Platform Account (Destination) */}
+            <div className="p-3 rounded-lg border-2 border-green-200 bg-green-50/30">
+              <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Suscribly Account (Transfer ₦50 Here)</p>
+              {platformAccount?.accountNumber ? (
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Bank</span>
+                    <span className="font-medium">{platformAccount.bankName || platformAccount.bankCode}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Account</span>
+                    <span className="flex items-center gap-1">
+                      <span className="font-mono font-medium">{platformAccount.accountNumber}</span>
+                      <button onClick={() => { navigator.clipboard.writeText(platformAccount.accountNumber); toast.success('Copied!'); }} className="text-muted-foreground hover:text-foreground"><CopyIcon className="h-3 w-3" /></button>
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Name</span>
+                    <span className="font-medium">{platformAccount.accountName}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Platform billing not configured yet.</p>
+              )}
+            </div>
+
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+              You will need to transfer ₦50 from your linked account to the Suscribly account to activate your mandate. After activation, ₦{parseFloat(selectedUpgradeTier?.serviceTierMonthlyPrice || '0').toLocaleString()} will be debited monthly.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpgradeConfirmModal(false)} disabled={upgradeInProgress}>Cancel</Button>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+              disabled={upgradeInProgress}
+              onClick={async () => {
+                setUpgradeInProgress(true);
+                try {
+                  const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+                  const result = await tierUpgradeApi.initiate({
+                    serviceTierId: selectedUpgradeTier.serviceTierId,
+                    billingCycle: 'MONTHLY',
+                  });
+                  setTierUpgradeResult(result);
+                  setUpgradeConfirmModal(false);
+                  // Always show verification sheet with platform account details
+                  setTierVerificationSheet(true);
+                  // Refresh tier info
+                  const { businessTierApi: tierApi } = await import('@/lib/api/serviceTiers');
+                  const info = await tierApi.getMyTier();
+                  setTierInfo(info);
+                } catch (error: any) {
+                  const msg = error?.response?.data?.message || 'Failed to initiate tier upgrade';
+                  toast.error(msg);
+                } finally {
+                  setUpgradeInProgress(false);
+                }
+              }}
+            >
+              {upgradeInProgress ? 'Processing...' : 'Confirm Upgrade'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Downgrade to Free Confirmation */}
+      <Dialog open={downgradeConfirmModal} onOpenChange={setDowngradeConfirmModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Downgrade to Free Plan</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel your {tierInfo?.tierName} subscription and downgrade to the Free plan?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              <p className="font-medium mb-1">You will lose access to:</p>
+              <ul className="list-disc list-inside space-y-1">
+                {tierInfo?.nddEnabled && <li>NDD Direct Debit services</li>}
+                {tierInfo?.customerManagementEnabled && <li>Customer management</li>}
+                <li>Higher limits on customers, products, mandates, and subscriptions</li>
+              </ul>
+              <p className="mt-2">Your current mandate will be cancelled. This takes effect immediately.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDowngradeConfirmModal(false)} disabled={downgradeInProgress}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={downgradeInProgress}
+              onClick={async () => {
+                setDowngradeInProgress(true);
+                try {
+                  const { tierUpgradeApi } = await import('@/lib/api/tierUpgrade');
+                  await tierUpgradeApi.cancel();
+                  toast.success('Subscription cancelled. You are now on the Free plan.');
+                  setDowngradeConfirmModal(false);
+                  // Refresh tier info
+                  const { businessTierApi: tierApi } = await import('@/lib/api/serviceTiers');
+                  const info = await tierApi.getMyTier();
+                  setTierInfo(info);
+                } catch (error: any) {
+                  const msg = error?.response?.data?.message || 'Failed to cancel subscription';
+                  toast.error(msg);
+                } finally {
+                  setDowngradeInProgress(false);
+                }
+              }}
+            >
+              {downgradeInProgress ? 'Cancelling...' : 'Confirm Downgrade'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tier Upgrade Verification Sheet */}
+      <Sheet open={tierVerificationSheet} onOpenChange={(open) => { if (!open) stopTierPolling(); setTierVerificationSheet(open); }}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-8">
+          <SheetHeader className="mb-10">
+            <SheetTitle className="text-2xl font-bold">Activate Your Subscription</SheetTitle>
+            <SheetDescription className="text-base">
+              Transfer ₦50 from your linked account to activate your {tierUpgradeResult?.serviceTierName} tier mandate
+            </SheetDescription>
+          </SheetHeader>
+
+          {tierUpgradeResult && (
+            <>
+              <div className="space-y-8">
+                {/* Status Banner */}
+                {tierUpgradeResult.businessSubscriptionStatus === 'ACTIVE' ? (
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-green-50/50 border border-green-200/50">
+                    <div className="h-2 w-2 rounded-full bg-green-500" />
+                    <span className="text-sm text-green-700">Subscription activated! Your {tierUpgradeResult.serviceTierName} plan is now active.</span>
+                  </div>
+                ) : tierPollingActive ? (
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-blue-50/50 border border-blue-200/50">
+                    <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-sm text-blue-700">Waiting for payment confirmation from your bank...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50/50 border border-amber-200/50">
+                    <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="text-sm text-amber-700">Transfer ₦50 from your account below, then click "I have sent the money"</span>
+                  </div>
+                )}
+
+                {/* Your Linked Account (Source) */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    Your Linked Bank Account (Transfer From)
+                  </p>
+                  <div className="p-5 rounded-xl border bg-card/50">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Bank</p>
+                        <p className="text-lg font-semibold">{tierUpgradeResult.payerBankName || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Account Number</p>
+                        <p className="text-lg font-mono flex items-center gap-2">{tierUpgradeResult.payerAccountNumber || 'N/A'}
+                          {tierUpgradeResult.payerAccountNumber && <button onClick={() => { navigator.clipboard.writeText(tierUpgradeResult.payerAccountNumber); toast.success('Copied!'); }} className="text-muted-foreground hover:text-foreground"><CopyIcon className="h-4 w-4" /></button>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-xs text-muted-foreground mb-1">Account Name</p>
+                      <p className="text-lg font-semibold">{tierUpgradeResult.payerAccountName || 'N/A'}</p>
+                    </div>
+                  </div>
+                  {!tierUpgradeResult.payerAccountNumber && (
+                    <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                      Please add your bank account in Settings first
+                    </p>
+                  )}
+                </div>
+
+                {/* Arrow indicator */}
+                <div className="flex justify-center">
+                  <svg className="h-8 w-8 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </div>
+
+                {/* Suscribly Platform Account (Destination) */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    Suscribly Account (Transfer ₦50 Here)
+                  </p>
+                  <div className="p-5 rounded-xl border-2 border-green-200 bg-green-50/30">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Bank</p>
+                        <p className="text-lg font-semibold">{tierUpgradeResult.platformBankName || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Account Number</p>
+                        <p className="text-lg font-mono flex items-center gap-2">{tierUpgradeResult.platformAccountNumber || 'N/A'}
+                          {tierUpgradeResult.platformAccountNumber && <button onClick={() => { navigator.clipboard.writeText(tierUpgradeResult.platformAccountNumber); toast.success('Copied!'); }} className="text-muted-foreground hover:text-foreground"><CopyIcon className="h-4 w-4" /></button>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-green-200">
+                      <p className="text-xs text-muted-foreground mb-1">Account Name</p>
+                      <p className="text-lg font-semibold">{tierUpgradeResult.platformAccountName || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subscription Details */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    Subscription Details
+                  </p>
+                  <div className="p-5 rounded-xl border bg-blue-50/30 border-blue-200/50">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Mandate Code</p>
+                        <p className="text-lg font-semibold">{tierUpgradeResult.mandateCode || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Plan</p>
+                        <p className="text-lg font-semibold">{tierUpgradeResult.serviceTierName}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-blue-200/50">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Recurring Amount</p>
+                          <p className="text-2xl font-bold">₦{parseFloat(tierUpgradeResult.amount || '0').toLocaleString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground mb-1">Billing Cycle</p>
+                          <p className="text-lg font-medium">{tierUpgradeResult.billingCycle}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Verification Amount */}
+                <div className="text-center py-6">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                    Activation Transfer Amount
+                  </p>
+                  <p className="text-4xl font-bold font-mono">₦50.00</p>
+                </div>
+
+                {/* Instructions */}
+                <div className="p-5 rounded-xl bg-muted/30 border">
+                  <p className="text-sm font-medium mb-3">How to Activate</p>
+                  <ul className="space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-start gap-2">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">1</span>
+                      Transfer exactly ₦50.00 from your linked bank account to the Suscribly account above
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">2</span>
+                      The transfer must come from the same bank account linked to your business
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">3</span>
+                      Once confirmed, your mandate will be activated via NIBSS NDD
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">4</span>
+                      After activation, monthly debits of ₦{parseFloat(tierUpgradeResult.amount || '0').toLocaleString()} will begin for your {tierUpgradeResult.serviceTierName} plan
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t">
+                {tierUpgradeResult.businessSubscriptionStatus === 'ACTIVE' ? (
+                  <Button
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    onClick={() => {
+                      stopTierPolling();
+                      setTierVerificationSheet(false);
+                    }}
+                  >
+                    <CheckIcon className="h-4 w-4 mr-2" />
+                    Close
+                  </Button>
+                ) : tierPollingActive ? (
+                  <Button
+                    className="flex-1"
+                    variant="outline"
+                    disabled
+                  >
+                    <svg className="h-4 w-4 mr-2 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Checking for payment confirmation...
+                  </Button>
+                ) : (
+                  <Button
+                    className="flex-1 bg-purple-600 hover:bg-purple-700"
+                    onClick={() => {
+                      startTierPolling();
+                    }}
+                  >
+                    I have sent the money
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Regenerate API Keys Modal */}
       <Dialog open={regenerateKeysModal} onOpenChange={setRegenerateKeysModal}>
@@ -3820,8 +4703,8 @@ ${business.businessName}`;
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddWebhookModal(false)}>Cancel</Button>
-            <Button onClick={confirmAddWebhook} className="bg-green-600 hover:bg-green-700">Add Webhook</Button>
+            <Button variant="outline" onClick={() => setAddWebhookModal(false)} disabled={isAddingWebhook}>Cancel</Button>
+            <Button onClick={confirmAddWebhook} className="bg-purple-600 hover:bg-purple-700" disabled={isAddingWebhook}>{isAddingWebhook ? 'Adding...' : 'Add Webhook'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3836,8 +4719,8 @@ ${business.businessName}`;
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTestWebhookModal(false)}>Cancel</Button>
-            <Button onClick={confirmTestWebhook} className="bg-green-600 hover:bg-green-700">Send Test Event</Button>
+            <Button variant="outline" onClick={() => setTestWebhookModal(false)} disabled={isTestingWebhook}>Cancel</Button>
+            <Button onClick={confirmTestWebhook} className="bg-purple-600 hover:bg-purple-700" disabled={isTestingWebhook}>{isTestingWebhook ? 'Sending...' : 'Send Test Event'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3875,17 +4758,18 @@ ${business.businessName}`;
               <Label htmlFor="product-amount">Amount (₦)</Label>
               <Input
                 id="product-amount"
-                type="number"
-                placeholder="e.g., 5000"
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g., 5,000"
                 value={productAmount}
-                onChange={(e) => setProductAmount(e.target.value)}
+                onChange={(e) => setProductAmount(formatAmountInput(e.target.value))}
                 className="mt-1"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateProductModal(false)}>Cancel</Button>
-            <Button onClick={confirmCreateProduct} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Product'}</Button>
+            <Button onClick={confirmCreateProduct} className="bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Product'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3923,17 +4807,18 @@ ${business.businessName}`;
               <Label htmlFor="edit-product-amount">Amount (₦)</Label>
               <Input
                 id="edit-product-amount"
-                type="number"
-                placeholder="e.g., 5000"
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g., 5,000"
                 value={productAmount}
-                onChange={(e) => setProductAmount(e.target.value)}
+                onChange={(e) => setProductAmount(formatAmountInput(e.target.value))}
                 className="mt-1"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditProductModal(false)}>Cancel</Button>
-            <Button onClick={confirmEditProduct} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Product'}</Button>
+            <Button onClick={confirmEditProduct} className="bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Product'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3997,7 +4882,7 @@ ${business.businessName}`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setChangePasswordModal(false)}>Cancel</Button>
-            <Button onClick={handleChangePassword} className="bg-green-600 hover:bg-green-700">Change Password</Button>
+            <Button onClick={handleChangePassword} className="bg-purple-600 hover:bg-purple-700">Change Password</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4186,7 +5071,7 @@ ${business.businessName}`;
                   Print
                 </Button>
                 <Button
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-purple-600 hover:bg-purple-700"
                   onClick={() => {
                     setVerificationModal(false);
                     toast.success('Mandate details shared. Mandate will activate once customer completes ₦50 transfer.');

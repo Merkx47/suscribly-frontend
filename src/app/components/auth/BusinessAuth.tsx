@@ -66,7 +66,7 @@ export function BusinessLogin() {
     setErrors({});
 
     try {
-      const { businessSlug, mustChangePassword } = await login(formData);
+      const { businessSlug, mustChangePassword } = await login({ ...formData, loginContext: 'BUSINESS' });
 
       if (mustChangePassword) {
         setPendingSlug(businessSlug);

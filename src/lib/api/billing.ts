@@ -46,9 +46,9 @@ export interface CreateMandateRequest {
   mandatePayerAddress?: string;
   mandateAmount: string;
   mandateNarration?: string;
-  mandateStartDate?: string;
   mandateEndDate?: string;
   mandateFrequency: string;
+  mandateVerificationToken?: string;
 }
 
 export interface UpdateMandateRequest {
@@ -62,9 +62,11 @@ export interface MandateResponse {
   mandateSubscriptionId: string | null;
   mandateProductId: string | null;
   mandateCode: string | null;
+  mandateNddMandateCode: string | null;
   mandateAccountNumber: string | null;
   mandateAccountName: string | null;
   mandateBankId: string | null;
+  mandateBankCode: string | null;
   mandateSubscriberCode: string | null;
   mandatePayerName: string | null;
   mandatePayerEmail: string | null;
@@ -109,11 +111,13 @@ export interface NddCreateMandateRequest {
   payerAddress: string;
   payerBankCode: string;
   payerAccountNumber: string;
-  amount: number;
+  payerAccountName?: string;
+  amount: string;
   narration: string;
   startDate: string;
   endDate: string;
-  frequency: string;
+  frequency?: string;
+  subscriberCode?: string;
 }
 
 export interface NddCreateMandateResponse {
@@ -124,15 +128,14 @@ export interface NddCreateMandateResponse {
 }
 
 export interface NddChargePayerRequest {
-  amount: number;
+  mandateCode: string;
+  amount: string;
   narration: string;
-  mandateId: string;
 }
 
 export interface NddChargePayerResponse {
   responseCode: string;
   responseMessage: string | null;
-  sessionId: string | null;
 }
 
 export const billingApi = {
@@ -183,6 +186,16 @@ export const billingApi = {
 
   async updateMandate(mandateId: string, data: UpdateMandateRequest): Promise<MandateResponse> {
     const response = await apiClient.put<MandateResponse>(`/api/mandate/${mandateId}`, data);
+    return response.data;
+  },
+
+  async activateMandate(mandateId: string): Promise<MandateResponse> {
+    const response = await apiClient.post<MandateResponse>(`/api/mandate/${mandateId}/activate`);
+    return response.data;
+  },
+
+  async cancelMandate(mandateId: string): Promise<MandateResponse> {
+    const response = await apiClient.post<MandateResponse>(`/api/mandate/${mandateId}/cancel`);
     return response.data;
   },
 

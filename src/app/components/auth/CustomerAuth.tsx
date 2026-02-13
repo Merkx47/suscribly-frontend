@@ -49,6 +49,7 @@ export function CustomerLogin() {
       const response = await authApi.login({
         email: formData.email,
         password: formData.password,
+        loginContext: 'CUSTOMER',
       });
 
       if (response.mustChangePassword) {
@@ -223,43 +224,22 @@ export function CustomerPasswordSetup() {
     confirmPassword: '',
   });
   const [errors, setErrors] = useState<{ password?: string; confirmPassword?: string }>({});
-  const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong'>('weak');
-
-  const checkPasswordStrength = (password: string) => {
-    if (password.length < 8) return 'weak';
-    const hasUpper = /[A-Z]/.test(password);
-    const hasLower = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecial = /[!@#$%^&*]/.test(password);
-    
-    const strength = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
-    if (strength >= 3) return 'strong';
-    if (strength >= 2) return 'medium';
-    return 'weak';
-  };
 
   const validateForm = () => {
     const newErrors: { password?: string; confirmPassword?: string } = {};
-    
+
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
     }
-    
+
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your password';
     } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const handlePasswordChange = (password: string) => {
-    setFormData({ ...formData, password });
-    setPasswordStrength(checkPasswordStrength(password));
   };
 
   const [isLoading, setIsLoading] = useState(false);
@@ -316,7 +296,7 @@ export function CustomerPasswordSetup() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Create a strong password"
                     value={formData.password}
-                    onChange={(e) => handlePasswordChange(e.target.value)}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className={`pl-10 pr-10 ${errors.password ? 'border-red-500' : ''}`}
                   />
                   <button
@@ -331,28 +311,6 @@ export function CustomerPasswordSetup() {
                     )}
                   </button>
                 </div>
-                {formData.password && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all ${
-                          passwordStrength === 'weak' ? 'w-1/3 bg-red-500' :
-                          passwordStrength === 'medium' ? 'w-2/3 bg-yellow-500' :
-                          'w-full bg-green-500'
-                        }`}
-                      />
-                    </div>
-                    <span className={`text-xs font-medium ${
-                      passwordStrength === 'weak' ? 'text-red-600' :
-                      passwordStrength === 'medium' ? 'text-yellow-600' :
-                      'text-green-600'
-                    }`}>
-                      {passwordStrength === 'weak' ? 'Weak' :
-                       passwordStrength === 'medium' ? 'Medium' :
-                       'Strong'}
-                    </span>
-                  </div>
-                )}
                 {errors.password && (
                   <div className="flex items-center gap-1 text-sm text-red-600">
                     <AlertCircleIcon className="w-4 h-4" />
@@ -395,23 +353,6 @@ export function CustomerPasswordSetup() {
                 )}
               </div>
 
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-purple-900 mb-2">Password Requirements:</p>
-                <ul className="text-sm text-purple-700 space-y-1">
-                  <li className="flex items-center gap-2">
-                    <CheckCircleIcon className={`w-4 h-4 ${formData.password.length >= 8 ? 'text-green-600' : 'text-gray-400'}`} />
-                    At least 8 characters
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircleIcon className={`w-4 h-4 ${/[A-Z]/.test(formData.password) ? 'text-green-600' : 'text-gray-400'}`} />
-                    One uppercase letter
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircleIcon className={`w-4 h-4 ${/[0-9]/.test(formData.password) ? 'text-green-600' : 'text-gray-400'}`} />
-                    One number
-                  </li>
-                </ul>
-              </div>
 
               {error && (
                 <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
