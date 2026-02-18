@@ -409,16 +409,17 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
                 <div className={`p-4 rounded-lg border ${nameMatchResult.isMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                   <div className="space-y-2">
                     <p className="text-sm"><span className="text-gray-500">Account Name:</span> <span className="font-medium">{nameMatchResult.accountName}</span></p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">Name Match:</span>
-                      <Badge variant={nameMatchResult.isMatch ? 'default' : 'destructive'} className={nameMatchResult.isMatch ? 'bg-green-600' : ''}>
-                        {Math.round(nameMatchResult.similarityScore * 100)}%
-                      </Badge>
-                      {nameMatchResult.isMatch
-                        ? <span className="text-xs text-green-600">Matches your business name</span>
-                        : <span className="text-xs text-red-600">Does not match (80% required)</span>
-                      }
-                    </div>
+                    {nameMatchResult.isMatch ? (
+                      <div className="flex items-center gap-2">
+                        <CheckIcon className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-green-700">Account verified — name matches your business</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-sm text-red-700 font-medium">Account name does not match your business name</p>
+                        <p className="text-xs text-red-600">For security, the bank account must be registered under your business name. This helps us protect your business and prevent unauthorized access.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
