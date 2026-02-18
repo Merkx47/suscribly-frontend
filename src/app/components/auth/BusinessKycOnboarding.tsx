@@ -20,6 +20,8 @@ import {
   RefreshIcon,
 } from '@/app/components/icons/FinanceIcons';
 import { kycApi, CommercialBankResponse, KycValidateResponse, NameMatchResponse, KycStatusResponse } from '@/lib/api/kyc';
+import { useAuth } from '@/contexts/AuthContext';
+import { LogOutIcon } from 'lucide-react';
 
 type KycStep = 'kyc-details' | 'bank-account' | 'review-submit';
 
@@ -504,6 +506,7 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
 // ============ Status Pages ============
 
 export function KycPendingReview() {
+  const { logout } = useAuth();
   const [kycStatus, setKycStatus] = useState<KycStatusResponse | null>(null);
 
   useEffect(() => {
@@ -529,9 +532,14 @@ export function KycPendingReview() {
               <p><span className="text-gray-500">Submitted:</span> {kycStatus.kycSubmittedAt ? new Date(kycStatus.kycSubmittedAt).toLocaleDateString() : 'N/A'}</p>
             </div>
           )}
-          <Button variant="outline" onClick={() => window.location.reload()} className="mt-4">
-            <RefreshIcon className="h-4 w-4 mr-1" /> Refresh Status
-          </Button>
+          <div className="flex gap-2 justify-center mt-4">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              <RefreshIcon className="h-4 w-4 mr-1" /> Refresh Status
+            </Button>
+            <Button variant="ghost" onClick={() => logout()} className="text-gray-500 hover:text-gray-700">
+              <LogOutIcon className="h-4 w-4 mr-1" /> Logout
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -539,6 +547,7 @@ export function KycPendingReview() {
 }
 
 export function KycRejected({ onRetry }: { onRetry: () => void }) {
+  const { logout } = useAuth();
   const [kycStatus, setKycStatus] = useState<KycStatusResponse | null>(null);
 
   useEffect(() => {
@@ -562,9 +571,14 @@ export function KycRejected({ onRetry }: { onRetry: () => void }) {
               <p className="text-red-700">{kycStatus.kycReviewNotes}</p>
             </div>
           )}
-          <Button onClick={onRetry} className="bg-purple-600 hover:bg-purple-700 mt-4">
-            Re-apply
-          </Button>
+          <div className="flex gap-2 justify-center mt-4">
+            <Button onClick={onRetry} className="bg-purple-600 hover:bg-purple-700">
+              Re-apply
+            </Button>
+            <Button variant="ghost" onClick={() => logout()} className="text-gray-500 hover:text-gray-700">
+              <LogOutIcon className="h-4 w-4 mr-1" /> Logout
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -572,6 +586,7 @@ export function KycRejected({ onRetry }: { onRetry: () => void }) {
 }
 
 export function KycUnderReview() {
+  const { logout } = useAuth();
   const [kycStatus, setKycStatus] = useState<KycStatusResponse | null>(null);
 
   useEffect(() => {
@@ -595,9 +610,14 @@ export function KycUnderReview() {
               <p className="text-orange-700">{kycStatus.kycReviewNotes}</p>
             </div>
           )}
-          <Button onClick={() => window.location.reload()} className="bg-purple-600 hover:bg-purple-700 mt-4">
-            Update & Resubmit
-          </Button>
+          <div className="flex gap-2 justify-center mt-4">
+            <Button onClick={() => window.location.reload()} className="bg-purple-600 hover:bg-purple-700">
+              Update & Resubmit
+            </Button>
+            <Button variant="ghost" onClick={() => logout()} className="text-gray-500 hover:text-gray-700">
+              <LogOutIcon className="h-4 w-4 mr-1" /> Logout
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
