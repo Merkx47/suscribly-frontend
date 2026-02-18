@@ -1445,7 +1445,7 @@ export function AdminDashboard() {
                   <div><span className="text-muted-foreground">Number:</span> <span className="font-medium">{selectedKyc.kycNumber}</span></div>
                   <div><span className="text-muted-foreground">Legal Name:</span> <span className="font-medium">{selectedKyc.kycLegalName}</span></div>
                   <div><span className="text-muted-foreground">Verified:</span> <Badge className={selectedKyc.kycVerified ? 'bg-green-600' : 'bg-red-500'}>{selectedKyc.kycVerified ? 'Yes' : 'No'}</Badge></div>
-                  <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{selectedKyc.bankCode}</span></div>
+                  <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{selectedKyc.bankName || selectedKyc.bankCode}</span></div>
                   <div><span className="text-muted-foreground">Account:</span> <span className="font-medium">{selectedKyc.accountNumber}</span></div>
                   <div className="col-span-2"><span className="text-muted-foreground">Account Name:</span> <span className="font-medium">{selectedKyc.accountName}</span></div>
                 </div>

@@ -46,6 +46,7 @@ export interface KycStatusResponse {
   kycSubmittedAt: string | null;
   kycReviewedAt: string | null;
   bankCode: string | null;
+  bankName: string | null;
   accountName: string | null;
   accountNumber: string | null;
 }
