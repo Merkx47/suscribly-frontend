@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { clearTokens, businessesApi, customersApi, subscriptionsApi, adminServiceTierApi, authApi, auditLogsApi, billingApi, formatPrice, formatLimit } from '@/lib/api';
+import { kycApi, KycStatusResponse, KycReviewRequest } from '@/lib/api/kyc';
 import type { BusinessResponse, PageResponse, ServiceTierResponse, AuditLogResponse } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -35,6 +36,8 @@ import {
   CreditCardIcon,
   CheckIcon,
   RefreshIcon,
+  ShieldIcon,
+  XCircleIcon,
 } from '@/app/components/icons/FinanceIcons';
 import {
   DropdownMenu,
@@ -101,7 +104,7 @@ const formatAmountInput = (value: string): string => {
 };
 const stripCommas = (value: string): string => value.replace(/,/g, '');
 
-type ActiveSection = 'overview' | 'businesses' | 'plans' | 'activity' | 'platform' | 'mandates' | 'settings';
+type ActiveSection = 'overview' | 'businesses' | 'plans' | 'activity' | 'platform' | 'mandates' | 'kyc' | 'settings';
 
 interface NavItem {
   id: ActiveSection;
@@ -116,6 +119,7 @@ const navItems: NavItem[] = [
   { id: 'activity', label: 'Activity', icon: FileTextIcon },
   { id: 'platform', label: 'Platform Account', icon: CreditCardIcon },
   { id: 'mandates', label: 'Tier Mandates', icon: FileTextIcon },
+  { id: 'kyc', label: 'KYC Review', icon: ShieldIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -127,6 +131,7 @@ const sectionMap: Record<string, ActiveSection> = {
   'activity': 'activity',
   'platform': 'platform',
   'mandates': 'mandates',
+  'kyc': 'kyc',
   'settings': 'settings',
 };
 
@@ -1310,6 +1315,199 @@ export function AdminDashboard() {
     );
   };
 
+  // ============ KYC Review Section ============
+  const KycReviewSection = () => {
+    const [queue, setQueue] = useState<KycStatusResponse[]>([]);
+    const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+    const [reviewModal, setReviewModal] = useState(false);
+    const [selectedKyc, setSelectedKyc] = useState<KycStatusResponse | null>(null);
+    const [reviewAction, setReviewAction] = useState<'APPROVE' | 'REJECT' | 'RETURN_FOR_REVIEW'>('APPROVE');
+    const [reviewNotes, setReviewNotes] = useState('');
+    const [isReviewing, setIsReviewing] = useState(false);
+
+    const fetchQueue = async () => {
+      setIsLoadingQueue(true);
+      try {
+        const data = await kycApi.getKycReviewQueue();
+        setQueue(data);
+      } catch {
+        toast.error('Failed to load KYC review queue');
+      } finally {
+        setIsLoadingQueue(false);
+      }
+    };
+
+    useEffect(() => { fetchQueue(); }, []);
+
+    const handleReview = async () => {
+      if (!selectedKyc?.businessId) return;
+      setIsReviewing(true);
+      try {
+        await kycApi.reviewKyc(selectedKyc.businessId, {
+          action: reviewAction,
+          reviewNotes: reviewNotes || undefined,
+        });
+        toast.success(`KYC ${reviewAction === 'APPROVE' ? 'approved' : reviewAction === 'REJECT' ? 'rejected' : 'returned'} successfully`);
+        setReviewModal(false);
+        setSelectedKyc(null);
+        setReviewNotes('');
+        fetchQueue();
+      } catch (e: any) {
+        toast.error(e.response?.data?.message || 'Review failed');
+      } finally {
+        setIsReviewing(false);
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">KYC Review Queue</h2>
+            <p className="text-sm text-muted-foreground mt-1">Review and approve business KYC submissions</p>
+          </div>
+          <Button variant="outline" onClick={fetchQueue} disabled={isLoadingQueue}>
+            <RefreshIcon className={`h-4 w-4 ${isLoadingQueue ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6">
+            {isLoadingQueue ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : queue.length === 0 ? (
+              <div className="text-center py-12">
+                <ShieldIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No pending KYC submissions</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-3 font-medium">Business</th>
+                      <th className="pb-3 font-medium">KYC Type</th>
+                      <th className="pb-3 font-medium">Legal Name</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Submitted</th>
+                      <th className="pb-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {queue.map((item) => (
+                      <tr key={item.businessId} className="border-b hover:bg-gray-50">
+                        <td className="py-3 font-medium">{item.businessName}</td>
+                        <td className="py-3">
+                          <Badge variant="outline">{item.kycType}</Badge>
+                        </td>
+                        <td className="py-3">{item.kycLegalName || '-'}</td>
+                        <td className="py-3">
+                          <Badge variant={item.kycStatus === 'KYC_PENDING_REVIEW' ? 'default' : 'secondary'} className={item.kycStatus === 'KYC_PENDING_REVIEW' ? 'bg-yellow-500' : 'bg-orange-500'}>
+                            {item.kycStatus === 'KYC_PENDING_REVIEW' ? 'Pending' : 'Under Review'}
+                          </Badge>
+                        </td>
+                        <td className="py-3 text-muted-foreground">
+                          {item.kycSubmittedAt ? new Date(item.kycSubmittedAt).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <Button size="sm" variant="outline" onClick={() => { setSelectedKyc(item); setReviewModal(true); setReviewAction('APPROVE'); }}>
+                              <EyeIcon className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8 px-2" onClick={() => { setSelectedKyc(item); setReviewAction('APPROVE'); setReviewModal(true); }}>
+                              <CheckCircleIcon className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="destructive" className="h-8 px-2" onClick={() => { setSelectedKyc(item); setReviewAction('REJECT'); setReviewModal(true); }}>
+                              <XCircleIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Review Modal */}
+        <Dialog open={reviewModal} onOpenChange={setReviewModal}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Review KYC - {selectedKyc?.businessName}</DialogTitle>
+              <DialogDescription>Review the business verification details</DialogDescription>
+            </DialogHeader>
+            {selectedKyc && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">KYC Type:</span> <span className="font-medium">{selectedKyc.kycType}</span></div>
+                  <div><span className="text-muted-foreground">Number:</span> <span className="font-medium">{selectedKyc.kycNumber}</span></div>
+                  <div><span className="text-muted-foreground">Legal Name:</span> <span className="font-medium">{selectedKyc.kycLegalName}</span></div>
+                  <div><span className="text-muted-foreground">Verified:</span> <Badge className={selectedKyc.kycVerified ? 'bg-green-600' : 'bg-red-500'}>{selectedKyc.kycVerified ? 'Yes' : 'No'}</Badge></div>
+                  <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{selectedKyc.bankCode}</span></div>
+                  <div><span className="text-muted-foreground">Account:</span> <span className="font-medium">{selectedKyc.accountNumber}</span></div>
+                  <div className="col-span-2"><span className="text-muted-foreground">Account Name:</span> <span className="font-medium">{selectedKyc.accountName}</span></div>
+                </div>
+
+                {selectedKyc.kycDocumentUrl && (
+                  <div>
+                    <a href={selectedKyc.kycDocumentUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                      View Document
+                    </a>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Action</Label>
+                  <div className="flex gap-2">
+                    {(['APPROVE', 'REJECT', 'RETURN_FOR_REVIEW'] as const).map((action) => (
+                      <button
+                        key={action}
+                        onClick={() => setReviewAction(action)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+                          reviewAction === action
+                            ? action === 'APPROVE' ? 'bg-green-600 text-white border-green-600'
+                              : action === 'REJECT' ? 'bg-red-600 text-white border-red-600'
+                              : 'bg-orange-500 text-white border-orange-500'
+                            : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400'
+                        }`}
+                      >
+                        {action === 'RETURN_FOR_REVIEW' ? 'Return' : action.charAt(0) + action.slice(1).toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(reviewAction === 'REJECT' || reviewAction === 'RETURN_FOR_REVIEW') && (
+                  <div className="space-y-2">
+                    <Label>{reviewAction === 'REJECT' ? 'Rejection Reason' : 'Notes for Business'}</Label>
+                    <Textarea
+                      value={reviewNotes}
+                      onChange={(e) => setReviewNotes(e.target.value)}
+                      placeholder={reviewAction === 'REJECT' ? 'Explain why the KYC is rejected...' : 'Notes on what needs to be corrected...'}
+                      rows={3}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setReviewModal(false)}>Cancel</Button>
+              <Button
+                onClick={handleReview}
+                disabled={isReviewing || ((reviewAction === 'REJECT' || reviewAction === 'RETURN_FOR_REVIEW') && !reviewNotes.trim())}
+                className={reviewAction === 'APPROVE' ? 'bg-green-600 hover:bg-green-700' : reviewAction === 'REJECT' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}
+              >
+                {isReviewing ? 'Processing...' : reviewAction === 'APPROVE' ? 'Approve' : reviewAction === 'REJECT' ? 'Reject' : 'Return for Review'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  };
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'overview':
@@ -1324,6 +1522,8 @@ export function AdminDashboard() {
         return PlatformSection();
       case 'mandates':
         return <TierMandatesSection />;
+      case 'kyc':
+        return <KycReviewSection />;
       case 'settings':
         return <SettingsSection />;
       default:

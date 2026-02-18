@@ -79,6 +79,7 @@ import {
 } from '@/app/components/ui/sheet';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/app/components/ui/input-otp';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
+import { BusinessKycOnboarding } from '@/app/components/auth/BusinessKycOnboarding';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/app/components/ui/command';
 import { toast } from 'sonner';
@@ -659,6 +660,18 @@ export function BusinessDashboard() {
 
   if (!isAuthenticated || !business) {
     return null;
+  }
+
+  // KYC Gate: if business is not KYC approved, show KYC onboarding
+  const kycStatus = business.businessKycStatus;
+  if (kycStatus && kycStatus !== 'KYC_APPROVED' && business.businessStatus !== 'ACTIVE') {
+    return (
+      <BusinessKycOnboarding
+        businessName={business.businessName || ''}
+        businessKycStatus={kycStatus}
+        onKycSubmitted={() => refreshBusiness()}
+      />
+    );
   }
 
   // Filter logic for products - only show products for current business

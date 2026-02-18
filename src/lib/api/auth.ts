@@ -27,6 +27,8 @@ export interface AuthResponse {
   businessId: string | null;
   businessName: string | null;
   businessSlug: string | null;
+  businessStatus: string | null;
+  businessKycStatus: string | null;
   mustChangePassword: boolean | null;
   message: string | null;
 }
@@ -78,6 +80,8 @@ export const authApi = {
         permissions: response.data.permissions,
         businessId: response.data.businessId,
         businessName: response.data.businessName,
+        businessStatus: response.data.businessStatus,
+        businessKycStatus: response.data.businessKycStatus,
       }));
     }
     return response.data;
@@ -96,6 +100,8 @@ export const authApi = {
         permissions: response.data.permissions,
         businessId: response.data.businessId,
         businessName: response.data.businessName,
+        businessStatus: response.data.businessStatus,
+        businessKycStatus: response.data.businessKycStatus,
       }));
     }
     return response.data;

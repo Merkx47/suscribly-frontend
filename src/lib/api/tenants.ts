@@ -43,6 +43,14 @@ export interface BusinessResponse {
   businessStatus: string | null;
   businessCreatedAt: string | null;
   businessUpdatedAt: string | null;
+  // KYC fields
+  businessKycType: string | null;
+  businessKycStatus: string | null;
+  businessKycLegalName: string | null;
+  businessKycVerified: boolean | null;
+  businessKycReviewNotes: string | null;
+  businessKycSubmittedAt: string | null;
+  // Service tier info
   serviceTierName: string | null;
   serviceTierBillingCycle: string | null;
   businessSubscriptionStatus: string | null;
