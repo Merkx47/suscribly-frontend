@@ -113,9 +113,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessNddSyncStatus: null,
         businessNddSyncedAt: null,
         businessOwnerId: null,
-        businessStatus: null,
+        businessStatus: response.businessStatus || null,
         businessCreatedAt: null,
         businessUpdatedAt: null,
+        businessKycType: null,
+        businessKycStatus: response.businessKycStatus || null,
+        businessKycLegalName: null,
+        businessKycVerified: null,
+        businessKycReviewNotes: null,
+        businessKycSubmittedAt: null,
+        serviceTierName: null,
+        serviceTierBillingCycle: null,
+        businessSubscriptionStatus: null,
       };
       setBusiness(immediateBusiness);
       localStorage.setItem('business', JSON.stringify(immediateBusiness));
