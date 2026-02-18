@@ -147,6 +147,12 @@ export const kycApi = {
     return response.data;
   },
 
+  // Admin: get presigned document URL for viewing
+  async getKycDocumentUrl(businessId: string): Promise<string> {
+    const response = await apiClient.get<{ url: string }>(`/api/businesses/${businessId}/kyc/document-url`);
+    return response.data.url;
+  },
+
   // Admin: review KYC (approve/reject/return)
   async reviewKyc(businessId: string, data: KycReviewRequest): Promise<KycStatusResponse> {
     const response = await apiClient.post<KycStatusResponse>(`/api/businesses/${businessId}/kyc/review`, data);

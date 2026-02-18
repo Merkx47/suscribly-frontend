@@ -1452,9 +1452,19 @@ export function AdminDashboard() {
 
                 {selectedKyc.kycDocumentUrl && (
                   <div>
-                    <a href={selectedKyc.kycDocumentUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                    <button
+                      className="text-sm text-blue-600 hover:underline"
+                      onClick={async () => {
+                        try {
+                          const url = await kycApi.getKycDocumentUrl(selectedKyc.businessId!);
+                          window.open(url, '_blank');
+                        } catch {
+                          toast.error('Failed to load document');
+                        }
+                      }}
+                    >
                       View Document
-                    </a>
+                    </button>
                   </div>
                 )}
 
