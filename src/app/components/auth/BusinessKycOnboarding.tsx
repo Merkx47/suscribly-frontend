@@ -6,6 +6,7 @@ import { Label } from '@/app/components/ui/label';
 import { Badge } from '@/app/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/app/components/ui/command';
+import { SuscriblyLogo } from '@/app/components/SuscriblyLogo';
 import {
   CheckIcon,
   SearchIcon,
@@ -172,8 +173,8 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center mx-auto mb-4">
-            <ShieldIcon className="h-8 w-8 text-purple-600" />
+          <div className="flex justify-center mb-4">
+            <SuscriblyLogo size="md" showText={false} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Verify Your Business</h1>
           <p className="text-gray-500 mt-1">Complete KYC verification to activate your {businessName} account</p>
