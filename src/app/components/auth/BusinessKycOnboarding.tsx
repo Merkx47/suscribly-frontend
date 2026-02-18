@@ -47,6 +47,7 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
   // Step 1: KYC Details
   const [kycType, setKycType] = useState<string>('RC');
   const [kycNumber, setKycNumber] = useState('');
+  const kycMaxLength: Record<string, number> = { RC: 7, CAC: 10, TIN: 13 };
   const [isValidating, setIsValidating] = useState(false);
   const [kycResult, setKycResult] = useState<KycValidateResponse | null>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
@@ -227,7 +228,7 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
                   {['RC', 'CAC', 'TIN'].map((type) => (
                     <button
                       key={type}
-                      onClick={() => { setKycType(type); setKycResult(null); setError(''); }}
+                      onClick={() => { setKycType(type); setKycNumber(''); setKycResult(null); setError(''); }}
                       className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
                         kycType === type
                           ? 'bg-purple-600 text-white border-purple-600'
@@ -246,8 +247,9 @@ function KycForm({ businessName, onKycSubmitted }: { businessName: string; onKyc
                 <div className="flex gap-2">
                   <Input
                     value={kycNumber}
-                    onChange={(e) => { setKycNumber(e.target.value); setKycResult(null); }}
+                    onChange={(e) => { setKycNumber(e.target.value.replace(/[^a-zA-Z0-9-]/g, '')); setKycResult(null); }}
                     placeholder={`Enter your ${kycType} number`}
+                    maxLength={kycMaxLength[kycType] || 13}
                     className="flex-1"
                   />
                   <Button onClick={handleValidateKyc} disabled={!kycNumber.trim() || isValidating}>
