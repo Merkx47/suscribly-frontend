@@ -123,13 +123,16 @@ export const kycApi = {
 
   // Upload file to S3 using presigned URL
   async uploadToS3(uploadUrl: string, file: File): Promise<void> {
-    await fetch(uploadUrl, {
+    const response = await fetch(uploadUrl, {
       method: 'PUT',
       body: file,
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
       },
     });
+    if (!response.ok) {
+      throw new Error(`File upload failed (${response.status})`);
+    }
   },
 
   // Admin: get KYC review queue
